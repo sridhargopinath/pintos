@@ -99,6 +99,10 @@ shutdown_power_off (void)
   printf ("Powering off...\n");
   serial_flush ();
 
+  /* ACPI Shutdown sequence supported by Bochs and QEMU
+     http://forum.osdev.org/viewtopic.php?t=16990 */
+  outw( 0x604, 0x0 | 0x2000 );
+
   /* Newer QEMU doesn't support old power-off sequence. Use ACPI
      shutdown. */
   outw (0xB004, 0x2000);
