@@ -100,7 +100,16 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+	// This list element is used as an entry in the SLEEP_LIST when the thread wants to sleep
+	struct list_elem sleepElem ;
+
+	// Store the number of ticks that the thread should sleep
+	int64_t ticks ;
   };
+
+// This is used to store the threads which are currently sleeping
+struct list sleep_list ;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
