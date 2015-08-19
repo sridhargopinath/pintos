@@ -101,9 +101,6 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
 
-	// This list element is used as an entry in the SLEEP_LIST when the thread wants to sleep
-	struct list_elem sleepElem ;
-
 	// Store the number of ticks that the thread should sleep
 	int64_t ticks ;
   };

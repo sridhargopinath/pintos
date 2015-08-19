@@ -95,7 +95,7 @@ timer_sleep (int64_t ticks)
 
   struct thread *t = thread_current() ;
   t->ticks = ticks ;
-  list_push_back ( &sleep_list, &t->sleepElem ) ;
+  list_push_back ( &sleep_list, &t->elem ) ;
   thread_block() ;
 
   intr_set_level (old_level) ;
@@ -170,7 +170,7 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
@@ -178,19 +178,20 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+  if ( list_empty(&sleep_list) )
+	  return ;
+
   // Check if you need to wake up the threads which are sleeping
-  struct list_elem *e ;
-  //printf ( "Inside timer interrupt\n" ) ;
-  for ( e = list_begin(&sleep_list) ; e != list_end(&sleep_list) ; e = list_next(e) )
+  struct list_elem *e, *next ;
+  for ( e = list_begin(&sleep_list) ; e != list_end(&sleep_list) ; e = next )
   {
-	  //printf ( "Inside loop\n" ) ;
-	  struct thread *t = list_entry(e, struct thread, sleepElem) ;
+	  struct thread *t = list_entry(e, struct thread, elem) ;
 	  --t->ticks ;
+	  next = list_next(e) ;
 	  if ( t->ticks == 0 )
 	  {
-		  thread_unblock(t) ;
-		  //printf ( "Removing with size %d\n", list_size(&sleep_list) ) ;
 		  list_remove(e) ;
+		  thread_unblock(t) ;
 	  }
   }
 }
