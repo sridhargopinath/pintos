@@ -20,14 +20,6 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
-/* List of processes in THREAD_READY state, that is, processes
-   that are ready to run but not actually running. */
-static struct list ready_list;
-
-/* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
-static struct list all_list;
-
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -199,8 +191,12 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* Add to run queue. */
+  // Add the thread to the ready queue
   thread_unblock (t);
+
+  // Yield the current thread if the new thread has higher priority. Else, add to ready queue
+  if ( priority > thread_current()->priority )
+	  thread_yield() ;
 
   return tid;
 }
@@ -233,13 +229,21 @@ void
 thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
+//  int current_priority = thread_current()->priority ;
 
   ASSERT (is_thread (t));
 
   old_level = intr_disable ();
+
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+/*
+  if ( t->priority > current_priority )
+  {
+	  thread_yield() ;
+  }
+*/
   intr_set_level (old_level);
 }
 
@@ -337,6 +341,13 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  
+  // Check if there is another thread with higher priority
+  struct list_elem *e = list_max ( &ready_list, min_priority, NULL ) ;
+  struct thread *t = list_entry ( e, struct thread, elem ) ;
+
+  if ( t->priority > new_priority )
+	  thread_yield() ;
 }
 
 /* Returns the current thread's priority. */
@@ -483,6 +494,18 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+// Function to compare the priority of the two threads
+bool min_priority ( const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *t1 = list_entry ( a, struct thread, elem ) ;
+	struct thread *t2 = list_entry ( b, struct thread, elem ) ;
+
+	if ( t1->priority < t2->priority )
+		return true ;
+	else
+		return false ;
+}
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -493,8 +516,11 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+
+  struct list_elem *e = list_max ( &ready_list, min_priority, NULL ) ;
+  list_remove(e) ;
+
+  return list_entry ( e, struct thread, elem ) ;
 }
 
 /* Completes a thread switch by activating the new thread's page

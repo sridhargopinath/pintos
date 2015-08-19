@@ -105,6 +105,14 @@ struct thread
 	int64_t ticks ;
   };
 
+/* List of processes in THREAD_READY state, that is, processes
+   that are ready to run but not actually running. */
+struct list ready_list;
+
+/* List of all processes.  Processes are added to this list
+   when they are first scheduled and removed when they exit. */
+struct list all_list;
+
 // This is used to store the threads which are currently sleeping
 struct list sleep_list ;
 
@@ -143,5 +151,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+// Function to compare the priority of the two threads given as list elements
+bool min_priority ( const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) ;
 
 #endif /* threads/thread.h */

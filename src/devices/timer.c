@@ -89,6 +89,9 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  if ( ticks <= 0 )
+	  return ;
+
   ASSERT (intr_get_level () == INTR_ON);
 
   enum intr_level old_level = intr_disable() ;
@@ -182,6 +185,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
 	  return ;
 
   // Check if you need to wake up the threads which are sleeping
+  // Also keep track of the priority of the threads which you are waking up
+  // Yield the current thread if you waking up a higher priority thread
+  int current_priority = thread_current()->priority ;
+  bool yield_thread = false ;
   struct list_elem *e, *next ;
   for ( e = list_begin(&sleep_list) ; e != list_end(&sleep_list) ; e = next )
   {
@@ -191,9 +198,18 @@ timer_interrupt (struct intr_frame *args UNUSED)
 	  if ( t->ticks == 0 )
 	  {
 		  list_remove(e) ;
-		  thread_unblock(t) ;
+
+		  // Un-block the thread
+		  list_push_back (&ready_list, &t->elem) ;
+		  t->status = THREAD_READY ;
+
+		  // Check the priority
+		  if ( t->priority > current_priority )
+			  yield_thread = true ;
 	  }
   }
+  if ( yield_thread == true )
+	  intr_yield_on_return() ;
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
