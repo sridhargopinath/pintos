@@ -103,6 +103,18 @@ struct thread
 
 	// Store the number of ticks that the thread should sleep
 	int64_t ticks ;
+
+	// Original priority of the thread
+	int real_priority ;
+
+	// Lock on which this thread is waiting
+	struct lock *lock ;
+
+	// List to store the threads which have donated priority to this thread
+	struct list donors ;
+
+	// List_elem of this thread if it wants to donate priority to some other thread
+	struct list_elem pri_elem ;
   };
 
 /* List of processes in THREAD_READY state, that is, processes

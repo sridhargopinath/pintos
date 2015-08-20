@@ -67,10 +67,10 @@ sema_down (struct semaphore *sema)
 
   old_level = intr_disable ();
   while (sema->value == 0) 
-    {
+  {
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
-    }
+  }
   sema->value--;
   intr_set_level (old_level);
 }
@@ -113,15 +113,22 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+
+  struct thread *t = NULL ;
   if (!list_empty (&sema->waiters))
   {
 	  // Get the thread with maximum priority waiting for the semaphore and unblock it
 	  struct list_elem *e = list_max ( &sema->waiters, min_priority, NULL ) ;
 	  list_remove(e) ;
 
-	  thread_unblock ( list_entry(e, struct thread, elem ) ) ;
+	  t = list_entry(e, struct thread, elem ) ;
+	  thread_unblock (t) ;
   }
   sema->value++;
+
+  if ( t != NULL && thread_current()->priority < t->priority )
+	  thread_yield() ;
+
   intr_set_level (old_level);
 }
 
@@ -201,8 +208,26 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  enum intr_level old_level = intr_disable() ;
+
+  // Check if the lock has been acquired. If so, then you have to donate priority
+  if ( lock->holder != NULL )
+  {
+	  //printf ( "Reached12123\n" ) ;
+	  // Donate the priority
+	  struct thread *cur = thread_current() ;
+	  struct thread *donee = lock->holder ;
+
+	  cur->lock = lock ;
+	  list_push_back ( &donee->donors, &cur->pri_elem ) ;
+	  donee->priority = cur->priority ;
+  }
+
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+
+  //printf ( "List size: %d in %s thread\n", list_size(&thread_current()->donors), thread_current()->name ) ;
+  intr_set_level(old_level) ;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -237,7 +262,45 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
+
+  enum intr_level old_level = intr_disable() ;
+
+  struct thread *cur = thread_current() ;
+  // Release the donation acquired for this lock
+  if ( !list_empty(&cur->donors) )
+  {
+	  struct list_elem *e, *next ;
+	  for ( e =  list_begin(&cur->donors) ; e != list_end(&cur->donors) ; e = next )
+	  {
+		  next = list_next(e) ;
+
+		  // Check if this list entry is waiting for the lock which was just released
+		  struct thread *t = list_entry( e, struct thread, pri_elem ) ;
+		  if ( t->lock == lock )
+		  {
+			  list_remove(e) ;
+			  t->lock = NULL ;
+		  }
+	  }
+  }
+
+  // Check if the current thread still has any donors
+  // If TRUE, then reset its priority
+  // Else, set the priority to the highest in the donors list
+  if ( list_empty(&cur->donors) )
+  {
+	  cur->priority = cur->real_priority ;
+  }
+  else
+  {
+	  struct list_elem *e = list_max ( &cur->donors, min_priority, NULL ) ;
+	  cur->priority = (list_entry( e, struct thread, pri_elem))->priority ;
+  }
+
   sema_up (&lock->semaphore);
+
+  //printf ( "Release() - %s Elements in ready list is %d\n", cur->name, list_size(&ready_list) ) ;
+  intr_set_level(old_level) ;
 }
 
 /* Returns true if the current thread holds LOCK, false
