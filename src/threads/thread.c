@@ -340,7 +340,18 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *cur = thread_current() ;
+
+  // Check if the thread currently has donation
+  // If TRUE, then set ONLY the real_priority. When the thread releases the donations, this priority will be reflected on the thread
+  // If FALSE, set both the real_priority and the 'priority' of the thread to the new_priority
+  if ( cur->priority != cur->real_priority )
+	  cur->real_priority = new_priority ;
+  else
+  {
+	  cur->priority = new_priority ;
+	  cur->real_priority = new_priority ;
+  }
   
   // Check if there is another thread with higher priority
   struct list_elem *e = list_max ( &ready_list, min_priority, NULL ) ;
