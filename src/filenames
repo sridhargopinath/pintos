@@ -309,6 +309,7 @@
 ./lib/stdbool.h
 ./threads/io.h
 ./threads/vaddr.h
+./threads/fixed-point.h
 ./threads/palloc.h
 ./threads/switch.h
 ./threads/intr-stubs.h

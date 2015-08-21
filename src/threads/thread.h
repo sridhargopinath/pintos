@@ -115,6 +115,12 @@ struct thread
 
 	// List_elem of this thread if it wants to donate priority to some other thread
 	struct list_elem pri_elem ;
+
+	// Nice value of this thread for mlfqs
+	int nice ;
+
+	// Recent CPU value of the thread
+	int recent_cpu ;
   };
 
 /* List of processes in THREAD_READY state, that is, processes
