@@ -145,7 +145,7 @@ static void print_mlfqs_stats(void)
 	for ( e = list_begin(&all_list) ; e != list_end(&all_list) ; e = list_next(e) )
 	{
 		struct thread *t = list_entry(e, struct thread, allelem) ;
-		printf ( "(%s,%d,%d,%d)->%d\t", t->name, t->nice, t->recent_cpu, t->priority, load_avg ) ;
+		printf ( "(%s,%d,%d,%d)\t", t->name, t->nice, t->recent_cpu, t->priority ) ;
 	}
 	printf ( "\n" ) ;
 
@@ -155,11 +155,15 @@ static void print_mlfqs_stats(void)
 // Re-calculate recent_cpu for the thread
 static void update_recent_cpu ( struct thread *t, void *aux UNUSED )
 {
+	enum intr_level old_level = intr_disable() ;
+
 	int a = fixed_point_mul ( convert_to_fixed_point(2), load_avg ) ;
 	a = fixed_point_div ( a, fixed_point_add(a, convert_to_fixed_point(1)) ) ;
 
 	a = fixed_point_mul ( a, t->recent_cpu ) ;
-	t->recent_cpu = fixed_point_add ( a, t->nice ) ;
+	t->recent_cpu = fixed_point_add ( a, convert_to_fixed_point(t->nice) ) ;
+
+	intr_set_level(old_level) ;
 
 	return ;
 }
@@ -178,7 +182,7 @@ static void update_load_avg(void)
   b = fixed_point_mul_with_int ( b, get_num_ready_threads() ) ;
 
   load_avg = fixed_point_add ( a, b ) ;
-  //printf ( "Load: %d %d %d\n", a, b, load_avg ) ;
+  //printf ( "%lld\tLoad: %d %d %d\t T:%d\n", timer_ticks(), a, b, load_avg, get_num_ready_threads() ) ;
 
   intr_set_level(old_level) ;
 
@@ -197,9 +201,12 @@ static void update_priority_mlfqs ( struct thread *t, void *aux UNUSED )
 		return ;
 
 	int a = fixed_point_div ( t->recent_cpu, convert_to_fixed_point(4) ) ;
-	a = convert_to_int_round_near ( a ) ;
+	int b = fixed_point_mul_with_int ( convert_to_fixed_point(t->nice), 2 ) ;
 
-	a = PRI_MAX - a - ( t->nice * 2 ) ;
+	a = fixed_point_add ( a, b ) ;
+	a = fixed_point_sub ( convert_to_fixed_point(PRI_MAX), a ) ;
+
+	a = convert_to_int_round_near ( a ) ;
 
 	if ( a < PRI_MIN )
 		a = PRI_MIN ;
@@ -324,16 +331,16 @@ thread_create (const char *name, int priority,
   if ( thread_mlfqs )
   {
 	  // This will run only one time. To initialize the nice value of the first thread to 0
-	  if ( strcmp(thread_current()->name, "main") == 0 )
+	  if ( strcmp(t->name, "idle") == 0 )
 	  {
-		  t->nice = 0 ;
-		  t->recent_cpu = 0 ;
+		  t->priority = 0 ;
 	  }
 	  else
 	  {
 		  t->nice = thread_current()->nice ;
 		  t->recent_cpu = thread_current()->recent_cpu ;
 	  }
+	  update_priority_mlfqs ( t, NULL ) ;
   }
 
   // Add the thread to the ready queue
@@ -532,7 +539,7 @@ thread_set_nice (int nice )
   cur->nice = nice ;
 
   // Update the priority and the recent_cpu of the thread
-  update_recent_cpu ( cur, NULL ) ;
+  //update_recent_cpu ( cur, NULL ) ;
   update_priority_mlfqs ( cur, NULL ) ;
 
   // Check if there is another thread with higher priority
@@ -674,6 +681,10 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donors) ;
   t->real_priority = priority ;
   t->lock = NULL ;
+
+  // Initialize thread for mlfqs
+  t->nice = 0 ;
+  t->recent_cpu = 0 ;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -51,12 +51,12 @@ static int fixed_point_add ( int x, int y )
 
 // Input: X and Y are fixed-point numbers
 // Output: Fixed-point number
-/*
+
 static int fixed_point_sub ( int x, int y )
 {
 	return x-y ;
 }
-*/
+
 // Input: X is fixed-point and N is int
 // Output: Fixed-point number
 /*
