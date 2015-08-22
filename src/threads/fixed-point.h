@@ -21,11 +21,12 @@ static int convert_to_fixed_point ( int n )
 // Function to convert to int with ROUNDING TO ZERO
 // Input: X is a fixed-point number
 // Output: Integer rounded to zero
+/*
 static int convert_to_int ( int x )
 {
 	return x/F ;
 }
-
+*/
 // Function to convert to int with ROUNDING TO NEAREST INTEGER
 // Input: X is a fixed-point number
 // Output: Integer rounded to nearest
@@ -50,25 +51,28 @@ static int fixed_point_add ( int x, int y )
 
 // Input: X and Y are fixed-point numbers
 // Output: Fixed-point number
+/*
 static int fixed_point_sub ( int x, int y )
 {
 	return x-y ;
 }
-
+*/
 // Input: X is fixed-point and N is int
 // Output: Fixed-point number
+/*
 static int fixed_point_add_with_int ( int x, int n )
 {
 	return x+n*F ;
 }
-
+*/
 // Input: X is fixed-point and N is int
 // Output: Fixed-point number
+/*
 static int fixed_point_sub_from_int ( int x, int n )
 {
 	return x-n*F ;
 }
-
+*/
 // Input: X and Y are fixed-point numbers
 // Output: Fixed-point number
 static int fixed_point_mul ( int x, int y )
@@ -92,9 +96,10 @@ static int fixed_point_div ( int x, int y )
 
 // Input: X is fixed-point and N is int
 // Output: Fixed-point number
+/*
 static int fixed_point_div_by_int ( int x, int n )
 {
 	return x/n ;
 }
-
+*/
 #endif

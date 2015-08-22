@@ -35,11 +35,11 @@ static struct lock tid_lock;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
-  {
-    void *eip;                  /* Return address. */
-    thread_func *function;      /* Function to call. */
-    void *aux;                  /* Auxiliary data for function. */
-  };
+{
+  void *eip;                  /* Return address. */
+  thread_func *function;      /* Function to call. */
+  void *aux;                  /* Auxiliary data for function. */
+};
 
 /* Statistics. */
 static long long idle_ticks;    /* # of timer ticks spent idle. */
@@ -134,6 +134,24 @@ static int get_num_ready_threads (void)
   return size ;
 }
 
+// Print thread mlfqs statistics
+static void print_mlfqs_stats(void)
+{
+	ASSERT ( thread_mlfqs ) ;
+	printf ( "%lld\t", timer_ticks() ) ;
+	printf ( "%d\t", load_avg ) ;
+
+	struct list_elem *e ;
+	for ( e = list_begin(&all_list) ; e != list_end(&all_list) ; e = list_next(e) )
+	{
+		struct thread *t = list_entry(e, struct thread, allelem) ;
+		printf ( "(%s,%d,%d,%d)->%d\t", t->name, t->nice, t->recent_cpu, t->priority, load_avg ) ;
+	}
+	printf ( "\n" ) ;
+
+	return ;
+}
+
 // Re-calculate recent_cpu for the thread
 static void update_recent_cpu ( struct thread *t, void *aux UNUSED )
 {
@@ -151,13 +169,18 @@ static void update_load_avg(void)
 {
   ASSERT ( thread_mlfqs ) ;
 
+  enum intr_level old_level = intr_disable() ;
+
   int a = fixed_point_div ( convert_to_fixed_point(59), convert_to_fixed_point(60) ) ;
   a = fixed_point_mul ( a, load_avg ) ;
 
   int b = fixed_point_div ( convert_to_fixed_point(1), convert_to_fixed_point(60) ) ;
-  b = fixed_point_mul ( b, get_num_ready_threads() ) ;
+  b = fixed_point_mul_with_int ( b, get_num_ready_threads() ) ;
 
   load_avg = fixed_point_add ( a, b ) ;
+  //printf ( "Load: %d %d %d\n", a, b, load_avg ) ;
+
+  intr_set_level(old_level) ;
 
   return ;
 }
@@ -165,6 +188,14 @@ static void update_load_avg(void)
 // Function to re-calculate the priorities based on the recent_cpu and load_avg values
 static void update_priority_mlfqs ( struct thread *t, void *aux UNUSED )
 {
+	ASSERT ( thread_mlfqs ) ;
+
+	enum intr_level old_level = intr_disable() ;
+
+	// No need to calculate priority for the idle thread
+	if ( t == idle_thread )
+		return ;
+
 	int a = fixed_point_div ( t->recent_cpu, convert_to_fixed_point(4) ) ;
 	a = convert_to_int_round_near ( a ) ;
 
@@ -176,6 +207,8 @@ static void update_priority_mlfqs ( struct thread *t, void *aux UNUSED )
 		a = PRI_MAX ;
 
 	t->priority = a ;
+
+	intr_set_level(old_level) ;
 
 	return ;
 }
@@ -200,8 +233,11 @@ thread_tick (void)
   // If we are running mlfqs, then update the variables
   if ( thread_mlfqs )
   {
-	  // Update the recent_cpu value of the current thread
-	  thread_current()->recent_cpu += convert_to_fixed_point(1) ;
+	  // Increment the RECENT_CPU value only if it is not idle_thread
+	  if ( t != idle_thread )
+	  {
+		  t->recent_cpu = fixed_point_add ( t->recent_cpu, convert_to_fixed_point(1) ) ;
+	  }
 
 	  if ( timer_ticks() % TIMER_FREQ == 0 )
 	  {
@@ -216,6 +252,7 @@ thread_tick (void)
 	  if ( timer_ticks() % 4 == 0 )
 	  {
 		  thread_foreach ( update_priority_mlfqs, NULL ) ;
+		  //print_mlfqs_stats() ;
 	  }
   }
 
@@ -487,6 +524,7 @@ void
 thread_set_nice (int nice ) 
 {
   ASSERT ( thread_mlfqs ) ;
+  ASSERT ( -20 <= nice && nice <= 20 ) ;
 
   enum intr_level old_level = intr_disable() ;
 
