@@ -126,6 +126,7 @@ sema_up (struct semaphore *sema)
   }
   sema->value++;
 
+  // If the thread unblocked has a higher priority, then schedule it
   if ( t != NULL && thread_current()->priority < t->priority )
 	  thread_yield() ;
 
@@ -168,7 +169,7 @@ sema_test_helper (void *sema_)
       sema_up (&sema[1]);
     }
 }
-
+
 /* Initializes LOCK.  A lock can be held by at most a single
    thread at any given time.  Our locks are not "recursive", that
    is, it is an error for the thread currently holding a lock to
@@ -194,6 +195,8 @@ lock_init (struct lock *lock)
 }
 
 // Function to implement nested donations as an recursive function
+// Each thread will update the priority of the thread which currently has the lock, with new priority
+// INTERUPPTS are disabled while running this function
 static void nested_donate ( struct thread *t )
 {
 	// Base Case: If the thread is not waiting on any lock, then return
@@ -232,6 +235,7 @@ lock_acquire (struct lock *lock)
 	  struct thread *cur = thread_current() ;
 	  struct thread *donee = lock->holder ;
 
+	  // Add the list_elem of the current thread to the list of donors in the donee thread
 	  cur->lock = lock ;
 	  list_push_back ( &donee->donors, &cur->pri_elem ) ;
 	  donee->priority = cur->priority ;
@@ -285,6 +289,7 @@ lock_release (struct lock *lock)
   struct thread *cur = thread_current() ;
 
   // Release the donation acquired for this lock
+  // For all the threads which are currently waiting on LOCK, remove their entry in DONORS list.
   if ( !list_empty(&cur->donors) )
   {
 	  struct list_elem *e, *next ;
@@ -312,7 +317,13 @@ lock_release (struct lock *lock)
   else
   {
 	  struct list_elem *e = list_max ( &cur->donors, min_priority, NULL ) ;
-	  cur->priority = (list_entry( e, struct thread, pri_elem))->priority ;
+	  int max = (list_entry( e, struct thread, pri_elem))->priority ;
+
+	  // If the current priority is higher than the MAX of the donors, retain current_priority
+	  if ( max > cur->real_priority )
+		  cur->priority = max ;
+	  else
+		  cur->priority = cur->real_priority ;
   }
 
   sema_up (&lock->semaphore);
@@ -388,23 +399,6 @@ cond_wait (struct condition *cond, struct lock *lock)
   lock_acquire (lock);
 }
 
-/*
-// Supporting function to find the thread with maximum priority for conditional variable
-static bool cond_min_priority ( const struct list_elem *a, const struct list_elem *b, void *aux UNUSED )
-{
-	struct semephore_elem *e1 = list_entry ( a, struct semaphore_elem, elem ) ;
-	struct thread *t1 = e1->t ;
-
-	struct semephore_elem *e2 = list_entry ( b, struct semaphore_elem, elem ) ;
-	struct thread *t2 = e2->t ;
-
-	if ( t1->priority < t2->priority )
-		return true ;
-	else
-		return false ;
-}
-*/
-
 // Own functon to find the thread with maximum priority waiting for the semaphore
 static struct list_elem * cond_list_max ( struct list *list )
 {
@@ -445,7 +439,6 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   // Wake up i.e call sema_up on the thread with highest priority among the threads in the cond->waiters list
   if (!list_empty (&cond->waiters))
   {
-	  //struct list_elem *e = list_max ( &cond->waiters, cond_min_priority, NULL ) ;
 	  struct list_elem *e = cond_list_max ( &cond->waiters ) ;
 	  list_remove(e) ;
 	  sema_up (&list_entry (e, struct semaphore_elem, elem)->semaphore);

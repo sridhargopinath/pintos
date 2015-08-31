@@ -1,0 +1,363 @@
+			+--------------------+
+			|        CS 140      |
+			| PROJECT 1: THREADS |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+				   
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread {
+	int64_t ticks ;			// This variable is used to store the remaining number of ticks that the thread has to sleep.
+
+struct list sleep_list ;	// This is the list which stores the threads which are currently sleeping.
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+
+The following steps take place in the timer_sleep function in the specified order:
+1. The 'ticks' variable of the current thread is set to the number of ticks that the thread wants to sleep.
+2. The current thread is pushed to the sleep_list.
+3. The current thread is blocked
+Following this, another thread will be picked up from the ready queue and it will be scheduled to run.
+
+In the timer_interrupt function, which will be executed for every tick of the CPU, I see if there are any threads which have finished their duration of sleep. If so, I wake up those threads by putting them back to the ready_queue.
+The following steps are taken to achieve this:
+1. Check if the sleep_list is empty. If empty, then no thread is currently sleeping. Hence, return.
+2. Iterate over the sleep_list i.e for all the threads which are in the sleep_list, decrease the ticks value of the thread by 1. This indicates that the thread has finished sleeping for 1 tick.
+3. If the tick value becomes 0, it indicates that the thread has slept for the required number of ticks and needs to wake up. To do this, I remove the thread from the sleep_list and then unblock the thread. This will insert the thread back to the ready list.
+Thus, we have woken up all the threads which have finished sleeping.
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+
+In order to minimize the amount of time spent in the timer_interrupt, we can look at the size of the sleep_list.
+If the sleep_list is empty, this will indicate that there are no threads which are sleeping. We can just return from the handler.
+
+When iterating over the sleep_list, when I see that I am waking up a thread with higher priority, instead of waking up that thread and scheduling it immediately, I set the intr_yield_on_return flag.
+This will reduce the time that the handler would have spent when scheduling the new thread.
+After the interrupt is serviced and before returning to the old thread, the new thread will be scheduled. By doing this, we can remove the load of scheduling the new thread from the timer interrupt handler.
+
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+
+One way to address this issue is to use locks. I use a global lock called sleep_lock and whenever a thread wants to sleep, it acquires this lock as soon as it enters the thread_sleep function.
+When the thread is exiting the function, it will then release this lock which can be picked up any thread which was waiting for the lock.
+
+Point to note here is that inside the thread_sleep function we are putting the current thread to sleep using the thread_block function.
+This function should always be called with interrupts OFF. This is checked with an assertion in the beginning of the function.
+Due to this, we also have to disable the interrupts inside the thread_sleep function so that we can call the thread_block function.
+Since there are only a couple of instructions in the thread_sleep function, this will not affect the performance of the system.
+
+In order to address these issues, I had to use a lock and also disable the interrupts inside the timer_sleep function to make it work. But the functionality of both of them almost similar. Hence I decided not to use locks for this and depend only on the disabling the interrupts to manage multiple threads inside thread_sleep function.
+
+Since the time taken for putting a thread to sleep is not long, this will make sure that the other thread which wants to sleep is not kept waiting for a long time.
+Nobody likes to be wait when they want to goto sleep.
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+
+If the timer interrupt occurs when the current thread is in the beginning of the timer_sleep function, then it will not be affected at all.
+The other thread will continue its execution without any problems.
+
+After the beginning of the function, the interrupts will be turned off.
+As explained in the previous answer, interrupts will be turned off for a very short duration of time when the thread is going to sleep.
+During this time there is very less chance of an timer_interrupt occurring.
+This will avoid the race conditions.
+
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+This design is simple, intuitive and easy to implement.
+While iterating over the sleep_list to wake up the threads which have finished sleeping, I had considered immediately scheduling the thread whose ticks became 0.
+But this will become a problem when we have multiple threads which have the same number of remaining ticks. In this case, we will wake up only the thread which we found first in the sleep_list i.e the thread which slept first.
+
+In the current design, I wake up all the threads whose ticks have become zero and then I will consider scheduling them.
+This will make sure that the threads do not oversleep.
+
+
+			 PRIORITY SCHEDULING
+			 ===================
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread {
+// Lock on which this thread is waiting
+	struct lock *lock ;
+
+// List to store the threads which have donated priority to this thread
+	struct list donors ;
+
+// List_elem of this thread if it wants to donate priority to some other thread
+	struct list_elem pri_elem ;
+
+// Original priority of the thread
+	int real_priority ;
+
+>> B2: Explain the data structure used to track priority donation.
+>> Use ASCII art to diagram a nested donation.  (Alternately, submit a
+>> .png file.)
+
+Lets consider a scenario where a thread A holds a lock for lock L. Another thread B with higher priority wants to acquire the lock L. The priority donation will occur during the call to lock_acquire by the thread B.
+In thread B, 'lock' will be set to point to lock L, the list element 'pri_elem' will be inserted into the list of donors in the thread A.
+In thread A, the 'donors' list will have a new list entry 'pri_elem' from the thread B, the priority will be set to the priority of thread B.
+
+The donors list and the lock variable are used to track the priority donation between different threads. 
+
+Consider an example where the thread A, thread B and thread C are the 3 threads with priorities H > M > L respectively.
+Thread A wants a lock on l1 which is held by B.
+At the same time, B wants a lock on l2 which is held by C.
+
+Due to the presence of priority donation, A will donate priority to thread B and B will in turn donate the priority of A to C. This is an example of nested priority donation.
+
+The contents of the 3 threads when the donation happens are:
+
+				Thread-A		Thread-B		Thread-C
+				
+Real_priority		H				M				L
+Priority			H				H				H
+Lock				l1				l2				-
+Donors				-				A				B
+pri_elem			B				C				-
+
+
+---- ALGORITHMS ----
+
+>> B3: How do you ensure that the highest priority thread waiting for
+>> a lock, semaphore, or condition variable wakes up first?
+
+A semaphore maintains a list of waiters, which is a list of threads waiting for the semaphore's value to become greater than 0.
+All the threads waiting for the semaphore's value to become 0 will continue to wait until a thread calls sema_up on the same semaphore.
+When this function is called, one of the thread which is currently waiting will be picked and then it will be unblocked.
+
+In this function, the older approach was to just select the thread which is at the front in the waiting list.
+In order to ensure that the highest priority thread is unblocked first, I select the thread with maximum priority in the waiting list. I do this with the help of list_max function.
+
+I will unblock this thread and I will also remove it from the waiters list.
+If the thread which was unblocked has a higher priority than the current thread, then the current thread should yield and the thread with higher priority should get the CPU.
+
+
+>> B4: Describe the sequence of events when a call to lock_acquire()
+>> causes a priority donation.  How is nested donation handled?
+
+Lets say that there is a thread A which has a priority H and a thread B which has a priority L. B has acquired a lock on l1 and A is currently running. A wants a lock to l1 now.
+
+The following steps will occur:
+1. Set the 'lock' variable of the thread A to l1.
+2. Add the list element 'pri_elem' to the 'donors' list of the thread B.
+3. Set the priority of the thread B to the priority of the thread A.
+
+After the above steps, B will now have the priority of the thread A and it continues its execution.
+
+To handle nested donation, I wrote a recursive function. First, the thread with priority H donates its priority to a thread with priority M. Now, if thread with priority M already has donated its priority to someone else, then its effective priority needs to be recalculated.
+This will go on till I reach a thread which has not donated priority to any other thread. At that time, the recursive function will hit the base case and it will return.
+After this process, the effective priority of all the threads which are involved in the nested priority donation will become H i.e the priority of the thread which triggered the priority donation.
+
+To explain nested priority donation, consider the following scenario:
+Thread A, thread B and thread C are the 3 threads with priorities H > M > L respectively.
+Thread A wants a lock on l1 which is held by B.
+At the same time, B wants a lock on l2 which is held by C.
+
+The following sequence of events occur:
+lock_acquire(l1)
+	nested_donate(B);
+		nested_donate(C);
+
+
+>> B5: Describe the sequence of events when lock_release() is called
+>> on a lock that a higher-priority thread is waiting for.
+
+The following steps are done when the lock is released:
+1. Check if the 'donors' list is empty. If so, then no thread is waiting for the current lock. We can return safely.
+2. The donors list will contain the list of threads which are waiting for different locks as well. Hence, it will check if there are any threads which are waiting on the lock which was just released. If so, then it is removed from the Donors list.
+3. The lock variable of the thread which was removed from the list is set to NULL.
+4. After the above process, if the list is empty, then the thread lost all the donations. Hence its priority is set to the original priority of the thread.
+5. If the list is not empty, then we will check if the maximum donation currently available is greater than the threads real_priority. If so, then we set it to the max priority. Else, I set it to the original priority of the thread.
+
+After this process, the priority and all the data structures will be set to their correct values and the execution of the program continues.
+
+
+---- SYNCHRONIZATION ----
+
+>> B6: Describe a potential race in thread_set_priority() and explain
+>> how your implementation avoids it.  Can you use a lock to avoid
+>> this race?
+
+In the set_priority method, we are accessing the ready_list which is a shared data.
+If a context switch happens in between when you are modifying the contents of the ready_list and if the other thread tries to access the ready_list, then it will become a race condition.
+
+Hence in order to avoid this, we can consider switching off the interrupts or using a lock.
+
+Using intr_disable, I switch off the interrupts in the beginning of the function and re-enable it at the end of the function.
+By doing this, the potential race is avoided.
+(OR)
+I can use a lock and ask the thread to acquire the lock at the beginning of the function and release the lock at the end of the function.
+By doing this, only one function will be inside the function at a time. Hence, race is avoided.
+
+I decided to stick with using the locks because it is a cleaner approach of solving synchronization problems and it does not miss any timer interrupts.
+
+
+---- RATIONALE ----
+
+>> B7: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+The design is simple and effective. By using very minimal extra variables, I was able to implement priority donation.
+The design ensures that we can communicate between threads without having any global data stored i.e in nested donation we can make the first thread donate the priority to thread down the nest without needing to store any global data.
+
+The other design was to store the list of all the threads waiting for a particular lock as a global data and then using that for communication between threads. That would require me to address synchronization problems as well. Hence, this was a better design.
+
+
+			  ADVANCED SCHEDULER
+			  ==================
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread {
+	// Nice value of this thread for mlfqs
+	int nice ;
+
+	// Recent CPU value of the thread
+	int recent_cpu ;
+
+// Fixed-point variable to store the load average
+static int load_avg = 0 ;
+
+
+---- ALGORITHMS ----
+
+>> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
+>> has a recent_cpu value of 0.  Fill in the table below showing the
+>> scheduling decision and the priority and recent_cpu values for each
+>> thread after each given number of timer ticks:
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0      0   0   0  63  61  59   A
+ 4      4   0   0  62  61  59   A
+ 8      8   0   0  61  61  59   B
+12      8   4   0  61  60  59   A
+16     12   4   0  60  60  59   B
+20     12   8   0  60  59  59   A
+24     16   8   0  59  59  59   C
+28     16   8   4  59  59  58   B
+32     16  12   4  59  58  58   A
+36     20  12   4  58  58  58   C
+
+
+>> C3: Did any ambiguities in the scheduler specification make values
+>> in the table uncertain?  If so, what rule did you use to resolve
+>> them?  Does this match the behavior of your scheduler?
+
+The documentation asks us to use 63 queues in which each queue contains the threads with the corresponding priority.
+Ex: Queue 10 will contain all the threads having the priority 10.
+This was not required for the implementation.
+To resolve this, I just used a SINGLE UNSORTED ready queue. To get the thread with highest priority, I just iterated over the ready queue to find that thread.
+
+The documentation also did not say anything about what we should do when another thread gets a priority which is equal to the priority of the current thread.
+Ex: If the current thread has a priority 62 and after the next 4th timer tick the priority becomes 61 along with another thread which also got the priority 61.
+Now, we can either continue with the execution of the current thread or to yield the current thread to let the other thread execute.
+To resolve this, I chose to yield the current thread if any other thread having the same priority as the current thread is seen in the ready queue.
+
+Another important part of my implementation is that the ready list is not sorted.
+Even if the ready list is sorted according to the priorities of the threads, the priorities of the threads will change too often.
+When a new thread is created, when set_priority is called, when priority is donated, when a thread is unblocked, every 4th timer tick in mlfqs and so on..
+Hence, this will incur a lot of overhead.
+
+
+>> C4: How is the way you divided the cost of scheduling between code
+>> inside and outside interrupt context likely to affect performance?
+
+One of the cost outside the timer interrupt is the sorting of the ready list.
+As explained in the previous answer, I have not considered a sorted ready list and this will improve performance over considering a sorted ready list which will incur a lot of overhead if you sort it for every 4th timer tick
+Other than that, most of the computations are done inside the timer interrupt as explained in the pintos documentation.
+
+
+---- RATIONALE ----
+
+>> C5: Briefly critique your design, pointing out advantages and
+>> disadvantages in your design choices.  If you were to have extra
+>> time to work on this part of the project, how might you choose to
+>> refine or improve your design?
+
+The design is pretty straight-forward. I have implemented the functionalities which is specified in the documentation along with a lot of comments in the source files.
+This will make the source code more readable and it will help me in understanding what I have done if I have to refer to the implementation in the future projects.
+I am not aware of any further work which can be done in this project. I have implemented everything which was asked with a simple approach. If at all I realize that there are areas of improvements in my implementation, I would definitely not hesitate to start working on that.
+
+
+>> C6: The assignment explains arithmetic for fixed-point math in
+>> detail, but it leaves it open to you to implement it.  Why did you
+>> decide to implement it the way you did?  If you created an
+>> abstraction layer for fixed-point math, that is, an abstract data
+>> type and/or a set of functions or macros to manipulate fixed-point
+>> numbers, why did you do so?  If not, why not?
+
+The important point to consider when building programs is re-usability. By providing fixed-point arithmetic as a header file, I can use the functions defined there whenever I want to.
+Also, I did not add all the fixed-point arithmetic operations that was mentioned in the documentation. I only implemented the functions which I was using in the thread.c file. Even if I needed to include more operations on this, I can do that by just adding more functions to the header file.
+I have even defined a macro which is used to specify the type of P.Q fixed-point I am using i.e. to specify the value of Q.
+After implementing the header file, it was very easy to just call these functions from inside the thread.c file whenever I wanted.
+This also gave me an option to change the physical implementation of the fixed-point arithmetic function whenever I want. All I need to do in that case is just to change the function definition.
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?

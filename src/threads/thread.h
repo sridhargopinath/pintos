@@ -81,7 +81,7 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-  {
+{
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -121,7 +121,7 @@ struct thread
 
 	// Recent CPU value of the thread
 	int recent_cpu ;
-  };
+};
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */

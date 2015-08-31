@@ -30,6 +30,9 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+// This lock is used to restrict only 1 thread inside timer_sleep()                                          
+struct lock sleep_lock ; 
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -96,12 +99,13 @@ timer_sleep (int64_t ticks)
 
   enum intr_level old_level = intr_disable() ;
 
+  // Add the thread to the sleeping list and block it
   struct thread *t = thread_current() ;
   t->ticks = ticks ;
   list_push_back ( &sleep_list, &t->elem ) ;
   thread_block() ;
 
-  intr_set_level (old_level) ;
+  intr_set_level ( old_level ) ;
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -200,8 +204,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 		  list_remove(e) ;
 
 		  // Un-block the thread
-		  list_push_back (&ready_list, &t->elem) ;
-		  t->status = THREAD_READY ;
+		  thread_unblock(t) ;
 
 		  // Check the priority
 		  if ( t->priority > current_priority )
