@@ -242,12 +242,20 @@ thread_tick (void)
 
 	  // For every 4th tick, update the priorities of all the threads
 	  if ( timer_ticks() % 4 == 0 )
+	  {
 		  thread_foreach ( update_priority_mlfqs, NULL ) ;
+
+		  // Check if there is any other thread with priority strictly greater than the current thread
+		  struct list_elem *e = list_max ( &ready_list, min_priority, NULL ) ;
+		  struct thread *t = list_entry ( e, struct thread, elem ) ;
+		  if ( t->priority > thread_current()->priority )
+			  intr_yield_on_return() ;
+	  }
   }
 
   thread_ticks++ ;
 
-  // Enforce preemption only in Advanced scheduler. Else, continue execution
+  // Enforce preemption only in Advanced scheduler. Else, Priority scheduling is implemented to take care of the scheduling. No need to use TIME_SLICE
   if ( thread_mlfqs )
 	  if (thread_ticks >= TIME_SLICE)
 	    intr_yield_on_return ();
@@ -317,7 +325,7 @@ thread_create (const char *name, int priority,
   {
 	  // Only for the idle thread, we need to set the priority to minimum
 	  // For other threads, ignore the priority value recieved from parent thread and calculate again using nice and recent_cpu value
-	  if ( strcmp(t->name, "idle") == 0 )
+	  if ( function == idle )
 	  {
 		  t->priority = PRI_MIN ;
 		  t->nice = t->recent_cpu = 0 ;
@@ -334,12 +342,8 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   // Yield the current thread if the new thread has higher priority. Else, add to ready queue
-  // In mlfqs, context switch happens only at every 4th tick or when the TIME SLICE has expired
-  if ( !thread_mlfqs )
-  {
-	  if ( priority > thread_current()->priority )
-		  thread_yield() ;
-  }
+  if ( t->priority > thread_current()->priority )
+	  thread_yield() ;
 
   return tid;
 }
