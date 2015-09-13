@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 
+#include "threads/synch.h"
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -23,6 +25,16 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+// Structure to keep track of the info of the children. Used to get the return status of a child
+struct process_info
+{
+	tid_t tid ;							// TID of the thread
+	struct list_elem elem ;				// This element is used to insert into the list of children
+	struct semaphore sema ;				// Semaphore used to wait the parent thread
+	int exit_status ;					// Exit status which is returned on wait system call
+	bool waited ;						// TRUE if the parent has already waited for the children
+} ;
 
 /* A kernel thread or user process.
 
@@ -96,6 +108,10 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+
+	struct thread *parent ;				// Parent thread
+	struct process_info *info ;			// Pointer to the entry of the structure in the parent thread
+	struct list children ;				// List of all the children of this thread
 #endif
 
     /* Owned by thread.c. */

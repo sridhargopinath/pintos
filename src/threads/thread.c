@@ -14,6 +14,7 @@
 
 #include "threads/fixed-point.h"
 #include "devices/timer.h"
+#include "threads/malloc.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -255,10 +256,9 @@ thread_tick (void)
 
   thread_ticks++ ;
 
-  // Enforce preemption only in Advanced scheduler. Else, Priority scheduling is implemented to take care of the scheduling. No need to use TIME_SLICE
-  if ( thread_mlfqs )
-	  if (thread_ticks >= TIME_SLICE)
-	    intr_yield_on_return ();
+  // Yeild the thread after 4 ticks. Even if the current thread has the highest priority, yield it.
+  if (thread_ticks >= TIME_SLICE)
+	  intr_yield_on_return ();
 }
 
 /* Prints thread statistics. */
@@ -320,6 +320,45 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  struct thread *cur = thread_current() ;
+
+  #ifdef USERPROG
+  // This part is executed only when user programs are running. This is used to initialize the things required for the PROCESS_WAIT to work
+  
+  // The name of the thread input to the new thread will be executable name along with the arguments trimmed down to the size of NAME field in struct thread
+  // Hence, insert a null character as soon as the name of the executable is encountered
+  unsigned i ;
+  for ( i = 0 ; i < sizeof(t->name) ; i ++ )
+  {
+	  if ( t->name[i] == ' ' )
+	  {
+		  t->name[i] = '\0' ;
+		  break ;
+	  }
+  }
+
+  // Changes in process_info structure
+  // Create a new structure element for inserting into the children list of parent thread
+  // Semaphore is initialized to 0 indicates that the thread has not exited yet. sema_up will be called when the thread exits
+  struct process_info *info = (struct process_info*) malloc (sizeof(struct process_info)) ;
+  sema_init(&info->sema, 0) ;
+  info->waited = false ;
+  info->tid = tid ;
+
+  // Changes in the parent process
+  // Insert the new thread as a children of the parent thread
+  // For the first thread creation, MAIN thread will not have its CHILDREN list initialized. Do that here
+  if ( function == idle )
+	  list_init ( &cur->children ) ;
+  list_push_back(&cur->children, &info->elem) ;
+
+  // Changes in the new thread
+  t->parent = cur ;
+  t->info = info ;
+  list_init(&t->children) ;
+
+  #endif
+
   // Set the NICE and RECENT_CPU value for the thread
   if ( thread_mlfqs )
   {
@@ -332,8 +371,8 @@ thread_create (const char *name, int priority,
 	  }
 	  else
 	  {
-		  t->nice = thread_current()->nice ;
-		  t->recent_cpu = thread_current()->recent_cpu ;
+		  t->nice = cur->nice ;
+		  t->recent_cpu = cur->recent_cpu ;
 		  update_priority_mlfqs ( t, NULL ) ;
 	  }
   }
@@ -342,7 +381,7 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   // Yield the current thread if the new thread has higher priority. Else, add to ready queue
-  if ( t->priority > thread_current()->priority )
+  if ( t->priority > cur->priority )
 	  thread_yield() ;
 
   return tid;

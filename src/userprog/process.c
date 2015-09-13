@@ -18,6 +18,8 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#include "threads/malloc.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -45,12 +47,81 @@ process_execute (const char *file_name)
   return tid;
 }
 
+static void *passArgs ( char *argument, char *sp )
+{
+  /*char *argument = (char *) malloc ( sizeof(char)*strlen(str)+1 ) ;*/
+  /*strlcpy(argument, str, strlen(str)+1) ;*/
+  //printf ( "Inside: %s %d\n", argument, strlen(argument) ) ;
+
+  char *vector[50], *save_ptr, *token, *argv[50] ;
+  int count = 0, i, index = 0 ;
+
+  // Split the input into set of argument vector.
+  for ( token = strtok_r (argument, " ", &save_ptr) ; token != NULL ; token = strtok_r (NULL, " ", &save_ptr) )
+  {
+	  argv[index++] = token ;
+  }
+
+  for ( i = index-1 ; i >= 0 ; i -- )
+  {
+	  sp -= (strlen(argv[i])+1) ;
+	  //printf ( "Token: %s Length: %d\n", argv[i], strlen(argv[i]) ) ;
+	  strlcpy(sp, argv[i], strlen(argv[i])+1) ;
+	  vector[count++] = sp ;
+  }
+
+  // Word align the stack
+  long int align = PHYS_BASE - (void *)sp ;
+  if ( align % 4 != 0 )
+  {
+	  for ( i = 4 - align % 4 ; i > 0 ; i -- )
+		  *--sp = 0 ;
+  }
+
+  //hex_dump ( 0, sp, 50, true ) ;
+
+  char **spAddr = (char **) sp ;
+  // Push 0 to indicate the value of argv[argc]
+  *--spAddr = 0 ;
+
+  for ( i = 0 ; i < count ; i ++ )
+	  *--spAddr = vector[i] ;
+
+  //hex_dump ( 0, spAddr, 50, true ) ;
+  // To store argv
+  char ***argvAddr = (char ***) spAddr ;
+  *--argvAddr = spAddr ;
+
+  // Store argc
+  int *argcAddr = (int *) argvAddr ;
+  *--argcAddr = count ;
+
+  // Store the dummy return address as well
+  *--argcAddr = 0 ;
+
+  //free(argument) ;
+
+  return (void *)argcAddr ;
+}
+
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *arguments)
 {
-  char *file_name = file_name_;
+  char *temp, *file_name ;
+
+  char *file_name_ = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
+  strlcpy(file_name_, arguments, strlen((char*)arguments)+1) ;
+
+  file_name = file_name_ = strtok_r ( file_name_, " ", &temp ) ;
+
+  /*[>printf ( "\n\nTest:\n" ) ;<]*/
+  /*[>printf ( "%s %s\n", (char*)file_name_, (char*)arguments ) ;<]*/
+  /*arguments++ ;*/
+
+  //printf ( "%s %s\n", (char*)file_name_, (char*)arguments+12 ) ;
+
   struct intr_frame if_;
   bool success;
 
@@ -59,13 +130,20 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
   success = load (file_name, &if_.eip, &if_.esp);
 
+  //printf ( "Before: %s %s %p %s\n", (char *)file_name_, file_name, if_.esp, (char*)arguments ) ;
+  if_.esp = passArgs(arguments, if_.esp);
+  //printf ( "After: %s %s %p\n", (char *)file_name_, file_name, if_.esp ) ;
+  //hex_dump ( 0, if_.esp, 50, true ) ;
+
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (arguments);
   if (!success) 
     thread_exit ();
 
+  //printf ( "Load Success\n" ) ;
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -86,9 +164,34 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+  struct thread *cur = thread_current() ;
+  struct list_elem *e ;
+
+  // Check if the tid belongs to one of the children. If not, return -1
+  bool found = false ;
+  struct process_info *info ;
+  for ( e = list_begin(&cur->children) ; e != list_end(&cur->children) ; e = list_next(e) )
+  {
+	  info = list_entry(e, struct process_info, elem) ;
+	  if ( info->tid == child_tid )
+	  {
+		  found = true ;
+		  break ;
+	  }
+  }
+  if ( found == false )
+	  return -1 ;
+
+  // Check if the current thread had already waited for the thread. If so, return -1
+  if ( info->waited == true )
+	  return -1 ;
+
+  // Wait for the thread to exit
+  sema_down ( &info->sema ) ;
+
+  return info->exit_status ;
 }
 
 /* Free the current process's resources. */
@@ -437,7 +540,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        *esp = PHYS_BASE ;
       else
         palloc_free_page (kpage);
     }

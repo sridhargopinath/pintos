@@ -127,8 +127,10 @@ sema_up (struct semaphore *sema)
   sema->value++;
 
   // If the thread unblocked has a higher priority, then schedule it
-  if ( t != NULL && thread_current()->priority < t->priority )
-	  thread_yield() ;
+  // It is IMPORTANT to check if the thread is not running inside interrupt before yielding. This is given in the comment for this function
+  if ( !intr_context() )
+	  if ( t != NULL && thread_current()->priority < t->priority )
+		  thread_yield() ;
 
   intr_set_level (old_level);
 }
