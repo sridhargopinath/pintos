@@ -141,14 +141,14 @@ start_process (void *arguments)
   if ( success )
 	  if_.esp = passArgs(arguments, if_.esp);
   
-  printf ( "tid is %d\n", thread_current()->tid ) ;
+  /*printf ( "tid is %d\n", thread_current()->tid ) ;*/
   palloc_free_page (arguments);
   
   // Change the status of the process before DYING
   /* If load failed, quit. */
   if (!success)
   {
-	printf ( "Am i here\n" ) ;
+	/*printf ( "Am i here\n" ) ;*/
 	lock_acquire(&exec_lock) ;
 	thread_current()->info->status = PROCESS_ERROR ;
 	cond_signal ( &exec_cond, &exec_lock ) ;

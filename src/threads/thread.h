@@ -123,6 +123,8 @@ struct thread
 	struct thread *parent ;				// Parent thread
 	struct process_info *info ;			// Pointer to the entry of the structure in the parent thread
 	struct list children ;				// List of all the children of this thread
+
+	struct list files ;					// List of all the files opened by this thread
 #endif
 
     /* Owned by thread.c. */

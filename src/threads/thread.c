@@ -359,6 +359,9 @@ thread_create (const char *name, int priority,
   t->info = info ;
   list_init(&t->children) ;
 
+  // Initialize the list of the open files
+  list_init(&t->files) ;
+
   #endif
 
   // Set the NICE and RECENT_CPU value for the thread
