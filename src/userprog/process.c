@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -134,14 +135,32 @@ start_process (void *arguments)
   success = load (file_name, &if_.eip, &if_.esp);
 
   //printf ( "Before: %s %s %p %s\n", (char *)file_name_, file_name, if_.esp, (char*)arguments ) ;
-  if_.esp = passArgs(arguments, if_.esp);
   //printf ( "After: %s %s %p\n", (char *)file_name_, file_name, if_.esp ) ;
   //hex_dump ( 0, if_.esp, 50, true ) ;
 
-  /* If load failed, quit. */
+  if ( success )
+	  if_.esp = passArgs(arguments, if_.esp);
+  
+  printf ( "tid is %d\n", thread_current()->tid ) ;
   palloc_free_page (arguments);
-  if (!success) 
+  
+  // Change the status of the process before DYING
+  /* If load failed, quit. */
+  if (!success)
+  {
+	printf ( "Am i here\n" ) ;
+	lock_acquire(&exec_lock) ;
+	thread_current()->info->status = PROCESS_ERROR ;
+	cond_signal ( &exec_cond, &exec_lock ) ;
+	lock_release(&exec_lock) ;
+
     thread_exit ();
+  }
+
+  lock_acquire(&exec_lock) ;
+  thread_current()->info->status = PROCESS_LOADED ;
+  cond_signal ( &exec_cond, &exec_lock ) ;
+  lock_release(&exec_lock) ;
 
   //printf ( "Load Success\n" ) ;
   /* Start the user process by simulating a return from an
@@ -187,6 +206,9 @@ process_wait (tid_t child_tid)
   // Check if the current thread had already waited for the thread. If so, return -1
   if ( info->waited == true )
 	  return -1 ;
+
+  //printf ( "\n\nInput: chile_tid: %d  info->tid: %d\n", child_tid, info->tid ) ;
+  //printf ( "%s Starting to wait for thread %s\n", cur->name, info->t->name ) ;
 
   // Wait for the thread to exit
   sema_down ( &info->sema ) ;

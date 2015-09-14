@@ -344,6 +344,8 @@ thread_create (const char *name, int priority,
   sema_init(&info->sema, 0) ;
   info->waited = false ;
   info->tid = tid ;
+  info->status = PROCESS_STARTING ;
+  info->t = t ;
 
   // Changes in the parent process
   // Insert the new thread as a children of the parent thread
@@ -469,6 +471,9 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
+
+  // Change the status of the process in the INFO structure
+  //thread_current()->info->status = PROCESS_EXITED ;
 #endif
 
   /* Remove thread from all threads list, set our status to dying,

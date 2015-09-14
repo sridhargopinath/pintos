@@ -26,10 +26,21 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+// enum to keep track of the status of the process
+enum process_status
+{
+	PROCESS_STARTING,
+	//PROCESS_EXITED,
+	PROCESS_LOADED,
+	PROCESS_ERROR
+} ;
+
 // Structure to keep track of the info of the children. Used to get the return status of a child
 struct process_info
 {
 	tid_t tid ;							// TID of the thread
+	struct thread *t ;					// Pointer to the thread this process belongs to
+	enum process_status status ;		// To keep track of the status of the Process
 	struct list_elem elem ;				// This element is used to insert into the list of children
 	struct semaphore sema ;				// Semaphore used to wait the parent thread
 	int exit_status ;					// Exit status which is returned on wait system call
