@@ -9,4 +9,6 @@ struct lock exec_lock ;
 
 void syscall_init (void);
 
+void exit ( int status ) ;
+
 #endif /* userprog/syscall.h */

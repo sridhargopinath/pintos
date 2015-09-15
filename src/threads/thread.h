@@ -125,6 +125,8 @@ struct thread
 	struct list children ;				// List of all the children of this thread
 
 	struct list files ;					// List of all the files opened by this thread
+
+	struct file *executable ;			// Executable file of the current process (thread)
 #endif
 
     /* Owned by thread.c. */

@@ -10,6 +10,9 @@
 #include "filesys/file.h"
 #include "filesys/directory.h"
 #include <string.h>
+#include "devices/shutdown.h"
+#include "userprog/process.h"
+#include "threads/malloc.h"
 
 // Typedef used for process IDs
 typedef int pid_t ;
@@ -28,7 +31,7 @@ struct lock fd_lock ;
 static void syscall_handler (struct intr_frame *);
 
 static void halt (void) ;
-static void exit ( int status ) ;
+/*static void exit ( int status ) ;*/
 static pid_t exec ( const char *cmd_line ) ;
 static int wait ( pid_t pid ) ;
 static bool create ( const char *file, unsigned initial_size ) ;
@@ -41,7 +44,7 @@ static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
 
-static void *convertAddr ( void *addr) ;
+static void *convertAddr ( const void *addr) ;
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
@@ -138,22 +141,22 @@ pid_t exec ( const char *cmd_line )
 	if ( found == false )
 		/*goto done1 ;*/
 		return -1 ;
-	printf ( "Reached condwait in exec\n" ) ;
+	/*printf ( "Reached condwait in exec\n" ) ;*/
 
 	while ( info->status == PROCESS_STARTING )
 		cond_wait ( &exec_cond, &exec_lock ) ;
 
-	printf ( "Passed condwait in exec with status error? %d and pid %d\n", info->status==PROCESS_ERROR, pid ) ;
+	/*printf ( "Passed condwait in exec with status error? %d and pid %d\n", info->status==PROCESS_ERROR, pid ) ;*/
 	lock_release(&exec_lock) ;
 
 	if ( info->status == PROCESS_ERROR )
 	{
-		printf ( "Inside error returning -1 value\n" ) ;
+		/*printf ( "Inside error returning -1 value\n" ) ;*/
 		/*goto done1 ;*/
 		return -1 ;
 	}
 
-	printf ( "EXEC return value: %d\n", pid ) ;
+	/*printf ( "EXEC return value: %d\n", pid ) ;*/
 	/*intr_set_level(old_level) ;*/
 	return pid ;
 
@@ -187,7 +190,17 @@ bool create ( const char *file, unsigned initial_size )
 
 bool remove ( const char *file )
 {
-	return false ;
+	// Check the validity of the address of the file and also the filename
+	convertAddr(file) ;
+	if ( strlen(file) == 0 )
+		return 0 ;
+
+	// Create the file
+	lock_acquire ( &file_lock) ;
+	bool ret = filesys_remove ( file ) ;
+	lock_release ( &file_lock ) ;
+
+	return ret ;
 }
 
 int open ( const char *file )
@@ -224,17 +237,30 @@ int open ( const char *file )
 
 int filesize ( int fd )
 {
-	return 0 ;
+	struct file_info *f = get_file_info ( fd ) ;
+	if ( f == NULL )
+		return -1 ;
+
+	return file_length(f->file) ;
 }
 
 int read ( int fd, void *buffer, unsigned size )
 {
 	buffer = convertAddr(buffer) ;
-	printf ( "Here\n" ) ;
+	/*printf ( "Here\n" ) ;*/
+
 
 	struct file_info *f = get_file_info ( fd ) ;
+	if ( f == NULL )
+	{
+		/*printf ( "Null\n" ) ;*/
+		return 0 ;
+	}
 
-	int read = file_read ( f, buffer, size ) ;
+	/*printf ( "Passed get_info\n" ) ;*/
+	int read = file_read ( f->file, buffer, size ) ;
+	/*printf ( "Buffer:\n%s\n\n", (char*)buffer ) ;*/
+	/*printf ( "Passed read call\n" ) ;*/
 
 	return read ;
 }
@@ -243,22 +269,41 @@ int write ( int fd, void *buffer, unsigned size )
 {
 	if ( fd == 1 )
 		putbuf ( buffer, size ) ;
-	
-	return size ;
+
+	buffer = convertAddr(buffer) ;
+
+	struct file_info *f = get_file_info ( fd ) ;
+	if ( f == NULL )
+		return 0 ;
+
+	int wrote = file_write ( f->file, buffer, size ) ;
+
+	return wrote ;
 }
 
 void seek ( int fd, unsigned position )
 {
+	struct file_info *f = get_file_info ( fd ) ;
+	if ( f == NULL )
+		return ;
+
+	file_seek ( f->file, position ) ;
+
 	return ;
 }
 
 unsigned tell ( int fd )
 {
-	return 0 ;
+	struct file_info *f = get_file_info ( fd ) ;
+	if ( f == NULL )
+		return 0 ;
+
+	return file_tell ( f->file ) ;
 }
 
 void close ( int fd )
 {
+	/*printf ( "Inside close\n" ) ;*/
 	//convertAddr( (void *)fd ) ;
 	if ( fd == 0 || fd == 1 )
 		return ;
@@ -303,7 +348,7 @@ struct file_info *get_file_info ( int fd )
 // Function to convert a virtual user space address to a physicall address
 // This will EXIT if the given address is not in user space or is unmapped
 // Also used to check the validity of a address
-void *convertAddr ( void *addr) 
+void *convertAddr ( const void *addr) 
 {
 	if ( addr == NULL )
 		exit(-1) ;

@@ -213,6 +213,8 @@ process_wait (tid_t child_tid)
   // Wait for the thread to exit
   sema_down ( &info->sema ) ;
 
+  info->waited = true ;
+
   return info->exit_status ;
 }
 
@@ -437,10 +439,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+
+  // Save the FILE * of the executable to implement DENY WRITE
+  t->executable = file ;
+  if ( success )
+	  file_deny_write ( file ) ;
+  
   return success;
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);

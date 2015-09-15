@@ -18,6 +18,7 @@
 
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "filesys/file.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -473,6 +474,10 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+
+  // Close the executable. ENABLE_WRITE will be implicitly called
+  file_close ( thread_current()->executable ) ;
+
   process_exit ();
 
   // Change the status of the process in the INFO structure
