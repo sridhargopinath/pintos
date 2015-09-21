@@ -474,14 +474,10 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-
   // Close the executable. ENABLE_WRITE will be implicitly called
   file_close ( thread_current()->executable ) ;
 
   process_exit ();
-
-  // Change the status of the process in the INFO structure
-  //thread_current()->info->status = PROCESS_EXITED ;
 #endif
 
   /* Remove thread from all threads list, set our status to dying,

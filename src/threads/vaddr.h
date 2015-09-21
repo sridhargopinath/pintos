@@ -58,7 +58,7 @@ static inline bool
 is_user_vaddr (const void *vaddr) 
 {
 	if ( vaddr == NULL )
-		exit(-1) ;
+		return 0;
   return vaddr < PHYS_BASE ;
 }
 

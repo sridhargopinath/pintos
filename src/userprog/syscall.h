@@ -11,4 +11,6 @@ void syscall_init (void);
 
 void exit ( int status ) ;
 
+void *convertAddr ( const void *addr ) ;
+
 #endif /* userprog/syscall.h */

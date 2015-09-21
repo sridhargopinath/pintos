@@ -28,6 +28,8 @@ struct file_info
 struct lock file_lock ;
 struct lock fd_lock ;
 
+#define DEBUG false
+
 static void syscall_handler (struct intr_frame *);
 
 static void halt (void) ;
@@ -44,10 +46,80 @@ static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
 
-static void *convertAddr ( const void *addr) ;
+/*static void *convertAddr ( const void *addr) ;*/
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
+
+/* Reads a byte at user virtual address UADDR. 
+UADDR must be below PHYS_BASE.
+Returns the byte value if successful, -1 if a segfault occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+	int result;
+	if ((void *) uaddr >= PHYS_BASE)
+	{
+		if(DEBUG) printf ("Trying to access memory address: %p, which is kernel memory address\n", uaddr);
+		return -1;
+	}
+	asm ("movl $1f, %0; movzbl %1, %0; 1:"
+		: "=&a" (result) : "m" (*uaddr));
+	return result;
+}
+
+/* Reads a word at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the word value if successful, -1 if a segfault occurred. */
+static int
+get_word_user (const int *uaddr)
+{
+  int result;
+  if ((void *) uaddr >= PHYS_BASE)
+  {
+    if(DEBUG) printf ("Trying to access memory address: %p, which is kernel memory address\n", uaddr);
+    exit ( -1);
+  }
+  asm ("movl $1f, %0; movl %1, %0; 1:"
+    : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+/* Writes BYTE to user address UDST. UDST must be below PHYS_BASE.
+Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+	int error_code;
+	if ((void *) udst >= PHYS_BASE) 
+	{
+		if(DEBUG) printf ("Trying to write to memory address: %p, value %u.\n",
+				 udst, byte);
+		return false;
+	}
+	asm ("movl $1f, %0; movb %b2, %1; 1:"
+		: "=&a" (error_code), "=m" (*udst) : "q" (byte));
+	return error_code != -1;
+}
+
+static int 
+get_safe(int * addr){
+  int res = 0;
+  int tmp;
+
+  int i;
+  for( i = 3; i >= 0; i-- ){
+    tmp = get_user((uint8_t*)(addr) + i);
+    if(DEBUG) printf("Byte %d - value %d | ", i, tmp);
+    if(tmp == -1){
+      exit (-1);
+    }
+    res |= tmp;
+    if(i != 0) res <<= 8;
+  }
+  if(DEBUG) printf(" Result: %d.\n", res);
+  return res;  
+}
 
 void syscall_init (void) 
 {
@@ -267,6 +339,7 @@ int read ( int fd, void *buffer, unsigned size )
 
 int write ( int fd, void *buffer, unsigned size )
 {
+	/*printf ("inside write\n" ) ;*/
 	if ( fd == 1 )
 		putbuf ( buffer, size ) ;
 
@@ -379,10 +452,11 @@ int allocateFD ()
 // All the addresses are virtually and should be converted to physical addresses before use
 static void syscall_handler (struct intr_frame *f) 
 {
+	/*printf ( "Enter Sys call\n") ;*/
   // Get the syscall number from the stack pointer
-  uint8_t sysNum  = *(uint8_t *)convertAddr(f->esp) ;
+  int sysNum  = get_word_user((int*)f->esp) ;
 
-  //printf("Syscall number: %d\n", sysNum) ;
+  /*printf("Syscall number: %d\n", sysNum) ;*/
   
   // Number of arguments required for this system call
   int n = argsNum[sysNum] ;
@@ -396,8 +470,8 @@ static void syscall_handler (struct intr_frame *f)
 	  uint32_t *paddr = convertAddr(vaddr) ;
 	  pargs[i] = *(void **)paddr ;
   }
-
-  //printf ( "numver of args is %d\n", n ) ;
+  
+  /*printf ( "numver of args is %d\n", n ) ;*/
   switch ( sysNum )
   {
 	  case SYS_HALT:		halt () ;

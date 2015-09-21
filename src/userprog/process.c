@@ -48,30 +48,28 @@ process_execute (const char *file_name)
   return tid;
 }
 
+// Function to split the arguments in the command line to tokens
+// Initialize the stack according to the documentation
+// IMPORTANT: Have put a limit of number of arguments to 50. More than 50 command line arguments will FAIL
 static void *passArgs ( char *argument, char *sp )
 {
-  /*char *argument = (char *) malloc ( sizeof(char)*strlen(str)+1 ) ;*/
-  /*strlcpy(argument, str, strlen(str)+1) ;*/
-  //printf ( "Inside: %s %d\n", argument, strlen(argument) ) ;
-
   char *vector[50], *save_ptr, *token, *argv[50] ;
   int count = 0, i, index = 0 ;
 
-  // Split the input into set of argument vector.
+  // Split the input into set of argument vector
   for ( token = strtok_r (argument, " ", &save_ptr) ; token != NULL ; token = strtok_r (NULL, " ", &save_ptr) )
-  {
 	  argv[index++] = token ;
-  }
 
+  // Copy each argument onto the stack terminated by a null character
+  // Save the address of each argument in the vector of addresses
   for ( i = index-1 ; i >= 0 ; i -- )
   {
 	  sp -= (strlen(argv[i])+1) ;
-	  //printf ( "Token: %s Length: %d\n", argv[i], strlen(argv[i]) ) ;
 	  strlcpy(sp, argv[i], strlen(argv[i])+1) ;
 	  vector[count++] = sp ;
   }
 
-  // Word align the stack
+  // Word align the stack to a multiple of 4
   long int align = PHYS_BASE - (void *)sp ;
   if ( align % 4 != 0 )
   {
@@ -79,49 +77,44 @@ static void *passArgs ( char *argument, char *sp )
 		  *--sp = 0 ;
   }
 
-  //hex_dump ( 0, sp, 50, true ) ;
-
-  char **spAddr = (char **) sp ;
   // Push 0 to indicate the value of argv[argc]
+  char **spAddr = (char **)sp ;
   *--spAddr = 0 ;
 
+  // Push the addresses of each argument saved in the vector onto the stack
   for ( i = 0 ; i < count ; i ++ )
 	  *--spAddr = vector[i] ;
 
-  //hex_dump ( 0, spAddr, 50, true ) ;
-  // To store argv
-  char ***argvAddr = (char ***) spAddr ;
+  // Push the address of argv which the starting address of the arguments vector
+  char ***argvAddr = (char ***)spAddr ;
   *--argvAddr = spAddr ;
 
-  // Store argc
-  int *argcAddr = (int *) argvAddr ;
+  // Push the number of arguments
+  int *argcAddr = (int *)argvAddr ;
   *--argcAddr = count ;
 
-  // Store the dummy return address as well
+  // Store the dummy return address
   *--argcAddr = 0 ;
 
-  //free(argument) ;
-
+  // Return the new stack pointer
   return (void *)argcAddr ;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *arguments)
+start_process (void *arguments_)
 {
-  char *temp, *file_name ;
+  // Create another copy as directed by PINTOS
+  char *arguments = arguments_ ;
+  char *temp ;
 
-  char *file_name_ = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
-  strlcpy(file_name_, arguments, strlen((char*)arguments)+1) ;
+  // Create another copy of the arguments to extract the FILENAME of the executable
+  char *file_name = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
+  strlcpy(file_name, arguments, strlen((char*)arguments)+1) ;
 
-  file_name = file_name_ = strtok_r ( file_name_, " ", &temp ) ;
-
-  /*[>printf ( "\n\nTest:\n" ) ;<]*/
-  /*[>printf ( "%s %s\n", (char*)file_name_, (char*)arguments ) ;<]*/
-  /*arguments++ ;*/
-
-  //printf ( "%s %s\n", (char*)file_name_, (char*)arguments+12 ) ;
+  // Get FILENAME of the executable
+  file_name = strtok_r ( file_name, " ", &temp ) ;
 
   struct intr_frame if_;
   bool success;
@@ -132,23 +125,21 @@ start_process (void *arguments)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  // Try loading the executable
   success = load (file_name, &if_.eip, &if_.esp);
 
-  //printf ( "Before: %s %s %p %s\n", (char *)file_name_, file_name, if_.esp, (char*)arguments ) ;
-  //printf ( "After: %s %s %p\n", (char *)file_name_, file_name, if_.esp ) ;
-  //hex_dump ( 0, if_.esp, 50, true ) ;
-
+  // Setup the STACK if the load was successful
   if ( success )
 	  if_.esp = passArgs(arguments, if_.esp);
   
-  /*printf ( "tid is %d\n", thread_current()->tid ) ;*/
   palloc_free_page (arguments);
+  free(file_name) ;
   
   // Change the status of the process before DYING
+  // Signal the parent process whether the load was successful or not using a conditional variable
   /* If load failed, quit. */
   if (!success)
   {
-	/*printf ( "Am i here\n" ) ;*/
 	lock_acquire(&exec_lock) ;
 	thread_current()->info->status = PROCESS_ERROR ;
 	cond_signal ( &exec_cond, &exec_lock ) ;
@@ -157,12 +148,12 @@ start_process (void *arguments)
     thread_exit ();
   }
 
+  // LOAD was successful
   lock_acquire(&exec_lock) ;
   thread_current()->info->status = PROCESS_LOADED ;
   cond_signal ( &exec_cond, &exec_lock ) ;
   lock_release(&exec_lock) ;
 
-  //printf ( "Load Success\n" ) ;
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -188,7 +179,8 @@ process_wait (tid_t child_tid)
   struct thread *cur = thread_current() ;
   struct list_elem *e ;
 
-  // Check if the tid belongs to one of the children. If not, return -1
+  // Check if TID is present in the list of the children of the current thread
+  // If not, return -1
   bool found = false ;
   struct process_info *info ;
   for ( e = list_begin(&cur->children) ; e != list_end(&cur->children) ; e = list_next(e) )
@@ -203,16 +195,16 @@ process_wait (tid_t child_tid)
   if ( found == false )
 	  return -1 ;
 
-  // Check if the current thread had already waited for the thread. If so, return -1
+  // Check if the current thread has already waited
+  // If so, return -1
   if ( info->waited == true )
 	  return -1 ;
 
-  //printf ( "\n\nInput: chile_tid: %d  info->tid: %d\n", child_tid, info->tid ) ;
-  //printf ( "%s Starting to wait for thread %s\n", cur->name, info->t->name ) ;
-
-  // Wait for the thread to exit
+  // Thread is still executing, wait for the thread to exit
+  // Thread will signal the parent thread before it dies
   sema_down ( &info->sema ) ;
 
+  // Set the WAITED flag to TRUE
   info->waited = true ;
 
   return info->exit_status ;
@@ -258,7 +250,7 @@ process_activate (void)
      interrupts. */
   tss_update ();
 }
-
+
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
 
