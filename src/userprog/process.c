@@ -128,14 +128,16 @@ start_process (void *arguments_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  lock_acquire ( &file_lock ) ;
   // Try loading the executable
   success = load (file_name, &if_.eip, &if_.esp);
+  lock_release ( &file_lock ) ;
 
   // Setup the STACK if the load was successful
   if ( success )
 	  if_.esp = passArgs(arguments, if_.esp);
 
-  palloc_free_page (arguments);
+  palloc_free_page (arguments_);
   /*palloc_free_page (file_name);*/
   free(file_name) ;
 

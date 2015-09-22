@@ -26,9 +26,6 @@ struct file_info
 	bool closed ;
 } ;
 
-// Lock to file system. Only one thread can be inside filesystem
-struct lock file_lock ;
-
 // Lock for assigning unique File Descriptors upon opening each file
 struct lock fd_lock ;
 
@@ -124,7 +121,6 @@ void syscall_init (void)
   // Initialize the condtional lock used by EXEC
   cond_init(&exec_cond) ;
   lock_init(&exec_lock) ;
-  sema_init(&exec_sema,0) ;
 
   // Initialize the File Descriptor lock
   lock_init(&fd_lock) ;
@@ -260,7 +256,6 @@ pid_t exec ( const char *cmd_line )
 
 int wait ( pid_t pid )
 {
-	//printf ( "reached wait syscall\n" ) ;
 	return process_wait ( pid ) ;
 }
 
@@ -305,12 +300,21 @@ int open ( const char *file )
 	bool check ;
 	struct inode *inode ;
 
-	check = dir_lookup ( dir_open_root(), file, &inode ) ;
-	if ( check == false )
+	struct dir *direc = dir_open_root() ;
+	if ( direc == NULL )
 	{
 		lock_release ( &file_lock ) ;
 		return -1 ;
 	}
+
+	check = dir_lookup ( direc, file, &inode ) ;
+	if ( check == false )
+	{
+		dir_close(direc) ;
+		lock_release ( &file_lock ) ;
+		return -1 ;
+	}
+	dir_close(direc) ;
 
 	struct file *newFile = file_open ( inode ) ;
 	if ( newFile == NULL )
@@ -322,7 +326,7 @@ int open ( const char *file )
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
 	if ( info == NULL )
 	{
-		printf ( "error2\n" ) ;
+		file_close ( newFile ) ;
 		lock_release ( &file_lock ) ;
 		return -1 ;
 	}
@@ -343,35 +347,36 @@ int filesize ( int fd )
 	if ( f == NULL )
 		return -1 ;
 
-	return file_length(f->file) ;
+	lock_acquire ( &file_lock ) ;
+	int size = file_length(f->file) ;
+	lock_release ( &file_lock ) ;
+
+	return size ;
 }
 
 int read ( int fd, void *buffer, unsigned size )
 {
 	buffer = convertAddr(buffer) ;
-	/*printf ( "Here\n" ) ;*/
-
 
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
-	{
-		/*printf ( "Null\n" ) ;*/
 		return 0 ;
-	}
 
-	/*printf ( "Passed get_info\n" ) ;*/
+	lock_acquire ( &file_lock ) ;
 	int read = file_read ( f->file, buffer, size ) ;
-	/*printf ( "Buffer:\n%s\n\n", (char*)buffer ) ;*/
-	/*printf ( "Passed read call\n" ) ;*/
+	lock_release ( &file_lock ) ;
 
 	return read ;
 }
 
 int write ( int fd, void *buffer, unsigned size )
 {
-	/*printf ("inside write\n" ) ;*/
 	if ( fd == 1 )
+	{
+		lock_acquire ( &file_lock ) ;
 		putbuf ( buffer, size ) ;
+		lock_release ( &file_lock ) ;
+	}
 
 	buffer = convertAddr(buffer) ;
 
@@ -379,7 +384,9 @@ int write ( int fd, void *buffer, unsigned size )
 	if ( f == NULL )
 		return 0 ;
 
+	lock_acquire ( &file_lock ) ;
 	int wrote = file_write ( f->file, buffer, size ) ;
+	lock_release ( &file_lock ) ;
 
 	return wrote ;
 }
@@ -390,7 +397,9 @@ void seek ( int fd, unsigned position )
 	if ( f == NULL )
 		return ;
 
+	lock_acquire ( &file_lock ) ;
 	file_seek ( f->file, position ) ;
+	lock_release ( &file_lock ) ;
 
 	return ;
 }
@@ -401,13 +410,15 @@ unsigned tell ( int fd )
 	if ( f == NULL )
 		return 0 ;
 
-	return file_tell ( f->file ) ;
+	lock_acquire ( &file_lock ) ;
+	int tell = file_tell ( f->file ) ;
+	lock_release ( &file_lock ) ;
+
+	return tell ;
 }
 
 void close ( int fd )
 {
-	/*printf ( "Inside close\n" ) ;*/
-	//convertAddr( (void *)fd ) ;
 	if ( fd == 0 || fd == 1 )
 		return ;
 
@@ -415,10 +426,10 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
-	/*if ( f->closed == true )*/
-		/*return ;*/
-
+	lock_acquire ( &file_lock ) ;
 	file_close ( f->file ) ;
+	lock_release ( &file_lock ) ;
+
 	f->closed = true ;
 
 	list_remove ( &f->elem) ;

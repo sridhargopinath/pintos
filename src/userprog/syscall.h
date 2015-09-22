@@ -6,7 +6,9 @@
 // Synchronization tools used in EXEC system call
 struct condition exec_cond ;
 struct lock exec_lock ;
-struct semaphore exec_sema ;
+
+// Lock for file system. Only 1 process inside filesys code
+struct lock file_lock ;
 
 void syscall_init (void);
 
