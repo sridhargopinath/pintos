@@ -6,8 +6,6 @@
 #include "threads/pte.h"
 #include "threads/palloc.h"
 
-#include "userprog/syscall.h"
-
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
 
@@ -59,7 +57,6 @@ static uint32_t *
 lookup_page (uint32_t *pd, const void *vaddr, bool create)
 {
   uint32_t *pt, *pde;
-  /*printf ( "Am I here\n" ) ;*/
 
   ASSERT (pd != NULL);
 
@@ -129,54 +126,14 @@ void *
 pagedir_get_page (uint32_t *pd, const void *uaddr) 
 {
   uint32_t *pte;
-  static int a = 0 ;
-  void *b ;
 
-  /*printf ( "Entering\n" ) ;*/
-
-  /*if ( pg_ofs(uaddr) == 0 )*/
-	  /*printf ( "Caught\n" ) ;*/
-  a++ ;
   ASSERT (is_user_vaddr (uaddr));
   
-  /*printf ( "hello %d\n", a) ;*/
-  if ( uaddr == 0 )
-	  exit(-1) ;
-
-  /*convertAddr(uaddr) ;*/
-  /*printf ( "hello2 %d\n", a) ;*/
   pte = lookup_page (pd, uaddr, false);
-  /*printf ( "hello3 %d with address %p and addr: %p\n", a, pte, uaddr) ;*/
-  if (pte != NULL)
-  {
-	
-    if ( (*pte & PTE_P) != 0)
-	{
-		if ( (*pte & PTE_ADDR) == 0 )
-			exit(-1) ;
-	/*printf ( "hello4 %d\n", a) ;*/
-		b = pte_get_page (*pte) + pg_ofs (uaddr);
-		if ( b == 0 )
-			exit (-1) ;
-		/*printf ( "Final address is %p\n", b ) ;*/
-		return b ;
-	}
-    /*b = pte_get_page (*pte) + pg_ofs (uaddr);*/
-	else
-	{
-		if ( *pte != 0 )
-		{
-	/*printf ( "hello5 %d\n", a) ;*/
-			return (void *) *pte ;
-		}
-		else
-			return NULL ;
-	}
-  }
+  if (pte != NULL && (*pte & PTE_P) != 0)
+    return pte_get_page (*pte) + pg_ofs (uaddr);
   else
-  {
     return NULL;
-  }
 }
 
 /* Marks user virtual page UPAGE "not present" in page

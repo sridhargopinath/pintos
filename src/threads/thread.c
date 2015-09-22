@@ -257,7 +257,9 @@ thread_tick (void)
 
   thread_ticks++ ;
 
-  // Yeild the thread after 4 ticks. Even if the current thread has the highest priority, yield it.
+  // Yeild the thread after 4 ticks
+  // Even if the current thread has the highest priority, yield it
+  // Else, other threads with same priority will starve
   if (thread_ticks >= TIME_SLICE)
 	  intr_yield_on_return ();
 }
@@ -325,9 +327,9 @@ thread_create (const char *name, int priority,
 
   #ifdef USERPROG
   // This part is executed only when user programs are running. This is used to initialize the things required for the PROCESS_WAIT to work
-  
+
   // The name of the thread input to the new thread will be executable name along with the arguments trimmed down to the size of NAME field in struct thread
-  // Hence, insert a null character as soon as the name of the executable is encountered
+  // Hence, insert a null character as soon as the name of the executable is ends
   unsigned i ;
   for ( i = 0 ; i < sizeof(t->name) ; i ++ )
   {
@@ -341,23 +343,25 @@ thread_create (const char *name, int priority,
   // Changes in process_info structure
   // Create a new structure element for inserting into the children list of parent thread
   // Semaphore is initialized to 0 indicates that the thread has not exited yet. sema_up will be called when the thread exits
-  struct process_info *info = (struct process_info*) malloc (sizeof(struct process_info)) ;
-  sema_init(&info->sema, 0) ;
-  info->waited = false ;
-  info->tid = tid ;
-  info->status = PROCESS_STARTING ;
-  info->t = t ;
+  t->info = (struct process_info*) malloc (sizeof(struct process_info)) ;
+  if ( t->info == NULL )
+	  printf ( "Error3\n") ;
+  sema_init(&t->info->sema, 0) ;
+  t->info->waited = false ;
+  t->info->tid = tid ;
+  t->info->status = PROCESS_STARTING ;
+  t->info->t = t ;
 
   // Changes in the parent process
   // Insert the new thread as a children of the parent thread
   // For the first thread creation, MAIN thread will not have its CHILDREN list initialized. Do that here
   if ( function == idle )
 	  list_init ( &cur->children ) ;
-  list_push_back(&cur->children, &info->elem) ;
+  list_push_back(&cur->children, &t->info->elem) ;
 
   // Changes in the new thread
   t->parent = cur ;
-  t->info = info ;
+  /*t->info = info ;*/
   list_init(&t->children) ;
 
   // Initialize the list of the open files

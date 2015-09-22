@@ -111,6 +111,9 @@ start_process (void *arguments_)
 
   // Create another copy of the arguments to extract the FILENAME of the executable
   char *file_name = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
+  /*char *file_name = (char *) palloc_get_page ( PAL_ZERO | PAL_USER ) ;*/
+  if ( file_name == NULL )
+	  printf ( "Error\n") ;
   strlcpy(file_name, arguments, strlen((char*)arguments)+1) ;
 
   // Get FILENAME of the executable
@@ -131,28 +134,35 @@ start_process (void *arguments_)
   // Setup the STACK if the load was successful
   if ( success )
 	  if_.esp = passArgs(arguments, if_.esp);
-  
+
   palloc_free_page (arguments);
+  /*palloc_free_page (file_name);*/
   free(file_name) ;
-  
+
   // Change the status of the process before DYING
   // Signal the parent process whether the load was successful or not using a conditional variable
   /* If load failed, quit. */
   if (!success)
   {
+	  if ( thread_current()->parent != NULL )
+	  {
 	lock_acquire(&exec_lock) ;
 	thread_current()->info->status = PROCESS_ERROR ;
 	cond_signal ( &exec_cond, &exec_lock ) ;
 	lock_release(&exec_lock) ;
+	  }
 
     thread_exit ();
   }
 
   // LOAD was successful
+  if ( thread_current()->parent != NULL )
+  {
   lock_acquire(&exec_lock) ;
   thread_current()->info->status = PROCESS_LOADED ;
   cond_signal ( &exec_cond, &exec_lock ) ;
   lock_release(&exec_lock) ;
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

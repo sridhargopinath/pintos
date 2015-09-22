@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+
 #include "userprog/syscall.h"
 
 /* Number of page faults processed. */
@@ -123,9 +124,9 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  bool not_present;  /* True: not-present page, false: writing r/o page. */
-  bool write;        /* True: access was write, false: access was read. */
-  bool user;         /* True: access by user, false: access by kernel. */
+  /*bool not_present;  [> True: not-present page, false: writing r/o page. <]*/
+  /*bool write;        [> True: access was write, false: access was read. <]*/
+  /*bool user;         [> True: access by user, false: access by kernel. <]*/
   void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
@@ -145,13 +146,16 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
-  write = (f->error_code & PF_W) != 0;
-  user = (f->error_code & PF_U) != 0;
+  /*not_present = (f->error_code & PF_P) == 0;*/
+  /*write = (f->error_code & PF_W) != 0;*/
+  /*user = (f->error_code & PF_U) != 0;*/
 
+  // These details are provided in the PINTOS documentation
   f->eip = (void (*) (void)) f->eax;
   f->eax = 0xffffffff;
+  /*printf ( "inside page_fault\n\n" ) ;*/
 
+  // Exit the current thread if the page fault occurs
   exit(-1) ;
 
   /* To implement virtual memory, delete the rest of the function

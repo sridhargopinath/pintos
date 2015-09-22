@@ -17,6 +17,7 @@
 // Typedef used for process IDs
 typedef int pid_t ;
 
+// This structure is used to keep track of all the files opened by a particular thread
 struct file_info
 {
 	int fd ;
@@ -25,10 +26,11 @@ struct file_info
 	bool closed ;
 } ;
 
+// Lock to file system. Only one thread can be inside filesystem
 struct lock file_lock ;
-struct lock fd_lock ;
 
-#define DEBUG false
+// Lock for assigning unique File Descriptors upon opening each file
+struct lock fd_lock ;
 
 static void syscall_handler (struct intr_frame *);
 
@@ -46,7 +48,7 @@ static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
 
-/*static void *convertAddr ( const void *addr) ;*/
+static void *convertAddr ( const void *addr) ;
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
@@ -54,19 +56,17 @@ static struct file_info *get_file_info ( int fd ) ;
 /* Reads a byte at user virtual address UADDR. 
 UADDR must be below PHYS_BASE.
 Returns the byte value if successful, -1 if a segfault occurred. */
-static int
-get_user (const uint8_t *uaddr)
-{
-	int result;
-	if ((void *) uaddr >= PHYS_BASE)
-	{
-		if(DEBUG) printf ("Trying to access memory address: %p, which is kernel memory address\n", uaddr);
-		return -1;
-	}
-	asm ("movl $1f, %0; movzbl %1, %0; 1:"
-		: "=&a" (result) : "m" (*uaddr));
-	return result;
-}
+/*static int*/
+/*get_user (const uint8_t *uaddr)*/
+/*{*/
+	/*int result;*/
+	/*if ((void *) uaddr >= PHYS_BASE)*/
+		/*return -1;*/
+
+	/*asm ("movl $1f, %0; movzbl %1, %0; 1:"*/
+		/*: "=&a" (result) : "m" (*uaddr));*/
+	/*return result;*/
+/*}*/
 
 /* Reads a word at user virtual address UADDR.
 UADDR must be below PHYS_BASE.
@@ -76,10 +76,8 @@ get_word_user (const int *uaddr)
 {
   int result;
   if ((void *) uaddr >= PHYS_BASE)
-  {
-    if(DEBUG) printf ("Trying to access memory address: %p, which is kernel memory address\n", uaddr);
     exit ( -1);
-  }
+
   asm ("movl $1f, %0; movl %1, %0; 1:"
     : "=&a" (result) : "m" (*uaddr));
   return result;
@@ -87,39 +85,34 @@ get_word_user (const int *uaddr)
 
 /* Writes BYTE to user address UDST. UDST must be below PHYS_BASE.
 Returns true if successful, false if a segfault occurred. */
-static bool
-put_user (uint8_t *udst, uint8_t byte)
-{
-	int error_code;
-	if ((void *) udst >= PHYS_BASE) 
-	{
-		if(DEBUG) printf ("Trying to write to memory address: %p, value %u.\n",
-				 udst, byte);
-		return false;
-	}
-	asm ("movl $1f, %0; movb %b2, %1; 1:"
-		: "=&a" (error_code), "=m" (*udst) : "q" (byte));
-	return error_code != -1;
-}
+/*static bool*/
+/*put_user (uint8_t *udst, uint8_t byte)*/
+/*{*/
+  /*int error_code;*/
+  /*if ((void *) udst >= PHYS_BASE)*/
+	  /*return false;*/
 
-static int 
-get_safe(int * addr){
-  int res = 0;
-  int tmp;
+  /*asm ("movl $1f, %0; movb %b2, %1; 1:"*/
+		/*: "=&a" (error_code), "=m" (*udst) : "q" (byte));*/
+  /*return error_code != -1;*/
+/*}*/
 
-  int i;
-  for( i = 3; i >= 0; i-- ){
-    tmp = get_user((uint8_t*)(addr) + i);
-    if(DEBUG) printf("Byte %d - value %d | ", i, tmp);
-    if(tmp == -1){
-      exit (-1);
-    }
-    res |= tmp;
-    if(i != 0) res <<= 8;
-  }
-  if(DEBUG) printf(" Result: %d.\n", res);
-  return res;  
-}
+/*static int get_safe(int * addr)*/
+/*{*/
+  /*int res = 0;*/
+  /*int tmp;*/
+
+  /*int i;*/
+  /*for( i = 3; i >= 0; i-- ){*/
+    /*tmp = get_user((uint8_t*)(addr) + i);*/
+    /*if(tmp == -1){*/
+      /*exit (-1);*/
+    /*}*/
+    /*res |= tmp;*/
+    /*if(i != 0) res <<= 8;*/
+  /*}*/
+  /*return res;  */
+/*}*/
 
 void syscall_init (void) 
 {
@@ -131,6 +124,9 @@ void syscall_init (void)
   // Initialize the condtional lock used by EXEC
   cond_init(&exec_cond) ;
   lock_init(&exec_lock) ;
+  sema_init(&exec_sema,0) ;
+
+  // Initialize the File Descriptor lock
   lock_init(&fd_lock) ;
 }
 
@@ -165,14 +161,46 @@ void exit ( int status )
 
 	printf ( "%s: exit(%d)\n", cur->name, status ) ;
 
-	// Clear the process info objects created as well.
-	// Clear the file_info objects
-
-	// TO implement WAIT syscall
+	// TO implement WAIT syscall:
 	// Store the exit status of the current thread in the process_info structure
 	// Signal the semaphore to wake up the parent if the parent thread is waiting on it
-	cur->info->exit_status = status ;
-	sema_up(&cur->info->sema) ;
+	// DO this only if PARENT is still alive
+	if ( cur->parent != NULL )
+	{
+		cur->info->exit_status = status ;
+
+		// Remove the list entry in the Parent Processes' children list
+		/*list_remove(&cur->info->elem ) ;*/
+		sema_up(&cur->info->sema) ;
+	}
+
+	// Clear the process info objects of all the children and free the memory
+	struct list_elem *e ;
+	for ( e = list_begin(&cur->children) ; e != list_end(&cur->children) ; )
+	{
+		struct process_info *p = list_entry ( e, struct process_info, elem ) ;
+		e = list_next(e) ;
+
+		list_remove(&p->elem) ;
+
+		// Make the parent pointer of all the children to NULL
+		p->t->parent = NULL ;
+
+		free(p) ;
+	}
+
+	// Clear the file_info objects
+	for ( e = list_begin(&cur->files) ; e != list_end(&cur->files) ; )
+	{
+		struct file_info *f = list_entry ( e, struct file_info, elem ) ;
+		e = list_next(e) ;
+		/*if ( f->closed == false )*/
+		/*{*/
+			file_close(f->file) ;
+		/*}*/
+		list_remove(&f->elem) ;
+		free(f) ;
+	}
 
 	// process_exit will be called inside this function
 	thread_exit() ;
@@ -181,15 +209,14 @@ void exit ( int status )
 // Create a new process using process_execute command and execute the command given
 pid_t exec ( const char *cmd_line )
 {
-	/*enum intr_level old_level = intr_disable() ;*/
-	//printf ( "Enter the exec call\n" ) ;
+	// Check the validity of the address given
 	convertAddr(cmd_line) ;
 
+	// Spawn the child by by creating a new thread
 	pid_t pid = process_execute(cmd_line) ;
 
 	// Was not able to create a thread for the new process
-	if ( pid == TID_ERROR)
-		/*goto done1 ;*/
+	if ( pid == TID_ERROR )
 		return -1 ;
 
 	// Check if the new thread was able to load successfully
@@ -197,6 +224,7 @@ pid_t exec ( const char *cmd_line )
 	lock_acquire(&exec_lock) ;
 
 	// Get the INFO structure of the thread which was just created
+	// Get the PROCESS_INFO pointer of the new thread
 	struct thread *cur = thread_current() ;
 	struct list_elem *e ;
 	bool found = false ;
@@ -210,32 +238,24 @@ pid_t exec ( const char *cmd_line )
 			break ;
 		}
 	}
+	// New thread not found. This won't happen
 	if ( found == false )
-		/*goto done1 ;*/
-		return -1 ;
-	/*printf ( "Reached condwait in exec\n" ) ;*/
-
-	while ( info->status == PROCESS_STARTING )
-		cond_wait ( &exec_cond, &exec_lock ) ;
-
-	/*printf ( "Passed condwait in exec with status error? %d and pid %d\n", info->status==PROCESS_ERROR, pid ) ;*/
-	lock_release(&exec_lock) ;
-
-	if ( info->status == PROCESS_ERROR )
 	{
-		/*printf ( "Inside error returning -1 value\n" ) ;*/
-		/*goto done1 ;*/
+		lock_release(&exec_lock) ;
 		return -1 ;
 	}
 
-	/*printf ( "EXEC return value: %d\n", pid ) ;*/
-	/*intr_set_level(old_level) ;*/
+	// Wait till signalled by the child process that it has completed load
+	while ( info->status == PROCESS_STARTING )
+		cond_wait ( &exec_cond, &exec_lock ) ;
+
+	lock_release(&exec_lock) ;
+
+	// Check if LOAD has been failed
+	if ( info->status == PROCESS_ERROR )
+		return -1 ;
+
 	return pid ;
-
-/*done1:*/
-	/*intr_set_level ( old_level ) ; */
-	/*return -1 ;*/
-
 }
 
 int wait ( pid_t pid )
@@ -287,15 +307,25 @@ int open ( const char *file )
 
 	check = dir_lookup ( dir_open_root(), file, &inode ) ;
 	if ( check == false )
+	{
+		lock_release ( &file_lock ) ;
 		return -1 ;
+	}
 
 	struct file *newFile = file_open ( inode ) ;
 	if ( newFile == NULL )
+	{
+		lock_release ( &file_lock ) ;
 		return -1 ;
+	}
 
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
 	if ( info == NULL )
+	{
+		printf ( "error2\n" ) ;
+		lock_release ( &file_lock ) ;
 		return -1 ;
+	}
 
 	info->fd = allocateFD() ;
 	info->file = newFile ;
@@ -390,6 +420,9 @@ void close ( int fd )
 
 	file_close ( f->file ) ;
 	f->closed = true ;
+
+	list_remove ( &f->elem) ;
+	free(f) ;
 
 	return ;
 }

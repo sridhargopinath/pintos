@@ -30,7 +30,6 @@ typedef int tid_t;
 enum process_status
 {
 	PROCESS_STARTING,
-	//PROCESS_EXITED,
 	PROCESS_LOADED,
 	PROCESS_ERROR
 } ;
