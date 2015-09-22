@@ -13,6 +13,7 @@
 #include "devices/shutdown.h"
 #include "userprog/process.h"
 #include "threads/malloc.h"
+#include "devices/input.h"
 
 // Typedef used for process IDs
 typedef int pid_t ;
@@ -23,7 +24,6 @@ struct file_info
 	int fd ;
 	struct file *file ;
 	struct list_elem elem ;
-	bool closed ;
 } ;
 
 // Lock for assigning unique File Descriptors upon opening each file
@@ -45,71 +45,14 @@ static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
 
-static void *convertAddr ( const void *addr) ;
+static int get_word_user ( const int *uaddr ) ;
+static int get_user ( const uint8_t *uaddr ) ;
+static void check_buffer ( const uint8_t *addr, int size ) ;
+static void check_file ( const uint8_t *addr) ;
+
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
-
-/* Reads a byte at user virtual address UADDR. 
-UADDR must be below PHYS_BASE.
-Returns the byte value if successful, -1 if a segfault occurred. */
-/*static int*/
-/*get_user (const uint8_t *uaddr)*/
-/*{*/
-	/*int result;*/
-	/*if ((void *) uaddr >= PHYS_BASE)*/
-		/*return -1;*/
-
-	/*asm ("movl $1f, %0; movzbl %1, %0; 1:"*/
-		/*: "=&a" (result) : "m" (*uaddr));*/
-	/*return result;*/
-/*}*/
-
-/* Reads a word at user virtual address UADDR.
-UADDR must be below PHYS_BASE.
-Returns the word value if successful, -1 if a segfault occurred. */
-static int
-get_word_user (const int *uaddr)
-{
-  int result;
-  if ((void *) uaddr >= PHYS_BASE)
-    exit ( -1);
-
-  asm ("movl $1f, %0; movl %1, %0; 1:"
-    : "=&a" (result) : "m" (*uaddr));
-  return result;
-}
-
-/* Writes BYTE to user address UDST. UDST must be below PHYS_BASE.
-Returns true if successful, false if a segfault occurred. */
-/*static bool*/
-/*put_user (uint8_t *udst, uint8_t byte)*/
-/*{*/
-  /*int error_code;*/
-  /*if ((void *) udst >= PHYS_BASE)*/
-	  /*return false;*/
-
-  /*asm ("movl $1f, %0; movb %b2, %1; 1:"*/
-		/*: "=&a" (error_code), "=m" (*udst) : "q" (byte));*/
-  /*return error_code != -1;*/
-/*}*/
-
-/*static int get_safe(int * addr)*/
-/*{*/
-  /*int res = 0;*/
-  /*int tmp;*/
-
-  /*int i;*/
-  /*for( i = 3; i >= 0; i-- ){*/
-    /*tmp = get_user((uint8_t*)(addr) + i);*/
-    /*if(tmp == -1){*/
-      /*exit (-1);*/
-    /*}*/
-    /*res |= tmp;*/
-    /*if(i != 0) res <<= 8;*/
-  /*}*/
-  /*return res;  */
-/*}*/
 
 void syscall_init (void) 
 {
@@ -164,9 +107,6 @@ void exit ( int status )
 	if ( cur->parent != NULL )
 	{
 		cur->info->exit_status = status ;
-
-		// Remove the list entry in the Parent Processes' children list
-		/*list_remove(&cur->info->elem ) ;*/
 		sema_up(&cur->info->sema) ;
 	}
 
@@ -190,11 +130,10 @@ void exit ( int status )
 	{
 		struct file_info *f = list_entry ( e, struct file_info, elem ) ;
 		e = list_next(e) ;
-		/*if ( f->closed == false )*/
-		/*{*/
-			file_close(f->file) ;
-		/*}*/
+
+		file_close(f->file) ;
 		list_remove(&f->elem) ;
+
 		free(f) ;
 	}
 
@@ -205,8 +144,8 @@ void exit ( int status )
 // Create a new process using process_execute command and execute the command given
 pid_t exec ( const char *cmd_line )
 {
-	// Check the validity of the address given
-	convertAddr(cmd_line) ;
+	// Check the validity of the address given by checking only the first 14 bytes of the string
+	check_file ( (uint8_t *)cmd_line ) ;
 
 	// Spawn the child by by creating a new thread
 	pid_t pid = process_execute(cmd_line) ;
@@ -254,6 +193,8 @@ pid_t exec ( const char *cmd_line )
 	return pid ;
 }
 
+// Current process waits for the thread with pid PID to exit
+// Implementation present in process.c
 int wait ( pid_t pid )
 {
 	return process_wait ( pid ) ;
@@ -262,8 +203,8 @@ int wait ( pid_t pid )
 // Creates a new file
 bool create ( const char *file, unsigned initial_size )
 {
-	// Check the validity of the address of the file and also the filename
-	convertAddr(file) ;
+	// Check the validity of the filename
+	check_file ( (uint8_t *)file ) ;
 	if ( strlen(file) == 0 )
 		return 0 ;
 
@@ -275,14 +216,15 @@ bool create ( const char *file, unsigned initial_size )
 	return ret ;
 }
 
+// Removes an already existing file
 bool remove ( const char *file )
 {
 	// Check the validity of the address of the file and also the filename
-	convertAddr(file) ;
+	check_file ( (uint8_t *)file ) ;
 	if ( strlen(file) == 0 )
 		return 0 ;
 
-	// Create the file
+	// Remove the file
 	lock_acquire ( &file_lock) ;
 	bool ret = filesys_remove ( file ) ;
 	lock_release ( &file_lock ) ;
@@ -290,16 +232,18 @@ bool remove ( const char *file )
 	return ret ;
 }
 
+// Opens an already existing file
 int open ( const char *file )
 {
-	// Check if the pointer is valid
-	convertAddr(file) ;
+	// Check the validity of the address of the file and also the filename
+	check_file ( (uint8_t *)file ) ;
 
 	lock_acquire ( &file_lock) ;
 
 	bool check ;
 	struct inode *inode ;
 
+	// Open the root directory where all the files are present
 	struct dir *direc = dir_open_root() ;
 	if ( direc == NULL )
 	{
@@ -307,6 +251,7 @@ int open ( const char *file )
 		return -1 ;
 	}
 
+	// Check if the file already exists
 	check = dir_lookup ( direc, file, &inode ) ;
 	if ( check == false )
 	{
@@ -316,6 +261,7 @@ int open ( const char *file )
 	}
 	dir_close(direc) ;
 
+	// Open the file
 	struct file *newFile = file_open ( inode ) ;
 	if ( newFile == NULL )
 	{
@@ -323,6 +269,7 @@ int open ( const char *file )
 		return -1 ;
 	}
 
+	// Create a FILE_INFO object to store the info of the open file
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
 	if ( info == NULL )
 	{
@@ -331,16 +278,17 @@ int open ( const char *file )
 		return -1 ;
 	}
 
+	// Allocate new File Descriptor to the opened file
 	info->fd = allocateFD() ;
 	info->file = newFile ;
 	list_push_back ( &thread_current()->files, &info->elem ) ;
-	info->closed = false ;
 
 	lock_release ( &file_lock ) ;
 
 	return info->fd ;
 }
 
+// Returns the size of the file
 int filesize ( int fd )
 {
 	struct file_info *f = get_file_info ( fd ) ;
@@ -354,9 +302,25 @@ int filesize ( int fd )
 	return size ;
 }
 
+// Reads SIZE bytes from the file with file descriptor FD into the BUFFER
 int read ( int fd, void *buffer, unsigned size )
 {
-	buffer = convertAddr(buffer) ;
+	// Reading from STD OUTPUT
+	if ( fd == 1 )
+		return 0 ;
+
+	// Check if the buffer is valid or not upto size bytes
+	check_buffer ( (uint8_t *)buffer, size ) ;
+
+	// Reading from STD INPUT
+	if ( fd == 0 )
+	{
+		unsigned i ;
+		for ( i = 0 ; i < size ; i ++ )
+			*((char*)buffer+i) = input_getc() ;
+
+		return size ;
+	}
 
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
@@ -369,16 +333,23 @@ int read ( int fd, void *buffer, unsigned size )
 	return read ;
 }
 
+// Writes SIZE bytes to BUFFER from the file pointed by the file descriptor FD
 int write ( int fd, void *buffer, unsigned size )
 {
+	// Writing to STD INPUT
+	if ( fd == 0 )
+		return 0 ;
+
+	// Check if the buffer is valid or not upto size bytes
+	check_buffer ( (uint8_t *)buffer, size ) ;
+
+	// Write to terminal
 	if ( fd == 1 )
 	{
 		lock_acquire ( &file_lock ) ;
 		putbuf ( buffer, size ) ;
 		lock_release ( &file_lock ) ;
 	}
-
-	buffer = convertAddr(buffer) ;
 
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
@@ -391,6 +362,7 @@ int write ( int fd, void *buffer, unsigned size )
 	return wrote ;
 }
 
+// Change the position of the pointer in the file descriptor
 void seek ( int fd, unsigned position )
 {
 	struct file_info *f = get_file_info ( fd ) ;
@@ -404,6 +376,7 @@ void seek ( int fd, unsigned position )
 	return ;
 }
 
+// Current position of the pointer in the file descriptor
 unsigned tell ( int fd )
 {
 	struct file_info *f = get_file_info ( fd ) ;
@@ -411,12 +384,13 @@ unsigned tell ( int fd )
 		return 0 ;
 
 	lock_acquire ( &file_lock ) ;
-	int tell = file_tell ( f->file ) ;
+	unsigned tell = file_tell ( f->file ) ;
 	lock_release ( &file_lock ) ;
 
 	return tell ;
 }
 
+// Close the file pointed by the file descriptor FD
 void close ( int fd )
 {
 	if ( fd == 0 || fd == 1 )
@@ -430,12 +404,61 @@ void close ( int fd )
 	file_close ( f->file ) ;
 	lock_release ( &file_lock ) ;
 
-	f->closed = true ;
-
+	// Free the memory
 	list_remove ( &f->elem) ;
 	free(f) ;
 
 	return ;
+}
+
+/* Reads a word at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the word value if successful, -1 if a segfault occurred. */
+int get_word_user (const int *uaddr)
+{
+  int result;
+  if ((void *) uaddr >= PHYS_BASE)
+    exit(-1);
+
+  asm ("movl $1f, %0; movl %1, %0; 1:"
+    : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+/*Reads a byte at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the byte value if successful, -1 if a segfault occurred.*/
+int get_user (const uint8_t *uaddr)
+{
+	int result;
+	if ((void *) uaddr >= PHYS_BASE)
+		return -1;
+
+	asm ("movl $1f, %0; movzbl %1, %0; 1:"
+		: "=&a" (result) : "m" (*uaddr));
+	return result;
+}
+
+// Checks if the BUFFER of size SIZE bytes is mapped and are in user address space
+// If not, exit
+void check_buffer ( const uint8_t *addr, int size )
+{
+  int tmp, i ;
+  for( i = 0 ; i <= size ; i++ )
+  {
+	  tmp = get_user(addr + i);
+	  if(tmp == -1)
+		  exit (-1);
+  }
+  return ;
+}
+
+// Checks if the first 14 bytes of the address are mapped and are in user address space
+// If not, exit
+void check_file ( const uint8_t *addr )
+{
+  check_buffer ( addr, 14 ) ;
+  return ;
 }
 
 // Get the file_info structure for a given File Descriptor
@@ -456,26 +479,10 @@ struct file_info *get_file_info ( int fd )
 			break ;
 		}
 	}
-	if ( check == false || f->closed == true )
+	if ( check == false )
 		return NULL ;
 
 	return f ;
-}
-
-// Function to convert a virtual user space address to a physicall address
-// This will EXIT if the given address is not in user space or is unmapped
-// Also used to check the validity of a address
-void *convertAddr ( const void *addr) 
-{
-	if ( addr == NULL )
-		exit(-1) ;
-	if ( !is_user_vaddr(addr) )
-		exit(-1) ;
-
-	void *x = pagedir_get_page(thread_current()->pagedir, addr) ;
-	if ( x == NULL )
-		exit(-1) ;
-	return x ;
 }
 
 // Function used allocate File Descriptors for each open file
@@ -496,12 +503,9 @@ int allocateFD ()
 // All the addresses are virtually and should be converted to physical addresses before use
 static void syscall_handler (struct intr_frame *f) 
 {
-	/*printf ( "Enter Sys call\n") ;*/
   // Get the syscall number from the stack pointer
   int sysNum  = get_word_user((int*)f->esp) ;
 
-  /*printf("Syscall number: %d\n", sysNum) ;*/
-  
   // Number of arguments required for this system call
   int n = argsNum[sysNum] ;
 
@@ -509,13 +513,8 @@ static void syscall_handler (struct intr_frame *f)
   void *pargs[n] ;
   int i ;
   for ( i = 0 ; i < n ; i ++ )
-  {
-	  uint32_t *vaddr = (uint32_t *)f->esp + i + 1 ;
-	  uint32_t *paddr = convertAddr(vaddr) ;
-	  pargs[i] = *(void **)paddr ;
-  }
+	  pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
   
-  /*printf ( "numver of args is %d\n", n ) ;*/
   switch ( sysNum )
   {
 	  case SYS_HALT:		halt () ;
@@ -557,7 +556,6 @@ static void syscall_handler (struct intr_frame *f)
 	  case SYS_CLOSE:		close ( (int)pargs[0] ) ;
 							break ;
 
-	  default:				printf ( "Invalid Handler\n\n\n") ;
-							break ;
+	  default:				break ;
   }
 }

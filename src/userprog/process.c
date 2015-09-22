@@ -111,9 +111,11 @@ start_process (void *arguments_)
 
   // Create another copy of the arguments to extract the FILENAME of the executable
   char *file_name = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
-  /*char *file_name = (char *) palloc_get_page ( PAL_ZERO | PAL_USER ) ;*/
   if ( file_name == NULL )
+  {
 	  printf ( "Error\n") ;
+  }
+
   strlcpy(file_name, arguments, strlen((char*)arguments)+1) ;
 
   // Get FILENAME of the executable
@@ -128,8 +130,8 @@ start_process (void *arguments_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  lock_acquire ( &file_lock ) ;
   // Try loading the executable
+  lock_acquire ( &file_lock ) ;
   success = load (file_name, &if_.eip, &if_.esp);
   lock_release ( &file_lock ) ;
 
@@ -137,8 +139,8 @@ start_process (void *arguments_)
   if ( success )
 	  if_.esp = passArgs(arguments, if_.esp);
 
+  // Free the resources
   palloc_free_page (arguments_);
-  /*palloc_free_page (file_name);*/
   free(file_name) ;
 
   // Change the status of the process before DYING
@@ -148,22 +150,21 @@ start_process (void *arguments_)
   {
 	  if ( thread_current()->parent != NULL )
 	  {
-	lock_acquire(&exec_lock) ;
-	thread_current()->info->status = PROCESS_ERROR ;
-	cond_signal ( &exec_cond, &exec_lock ) ;
-	lock_release(&exec_lock) ;
+		  lock_acquire(&exec_lock) ;
+		  thread_current()->info->status = PROCESS_ERROR ;
+		  cond_signal ( &exec_cond, &exec_lock ) ;
+		  lock_release(&exec_lock) ;
 	  }
-
-    thread_exit ();
+	  thread_exit ();
   }
 
   // LOAD was successful
   if ( thread_current()->parent != NULL )
   {
-  lock_acquire(&exec_lock) ;
-  thread_current()->info->status = PROCESS_LOADED ;
-  cond_signal ( &exec_cond, &exec_lock ) ;
-  lock_release(&exec_lock) ;
+	  lock_acquire(&exec_lock) ;
+	  thread_current()->info->status = PROCESS_LOADED ;
+	  cond_signal ( &exec_cond, &exec_lock ) ;
+	  lock_release(&exec_lock) ;
   }
 
   /* Start the user process by simulating a return from an
