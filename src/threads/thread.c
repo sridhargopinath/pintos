@@ -18,6 +18,7 @@
 
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "filesys/file.h"
 #endif
 
@@ -345,7 +346,10 @@ thread_create (const char *name, int priority,
   // Semaphore is initialized to 0 indicates that the thread has not exited yet. sema_up will be called when the thread exits
   t->info = (struct process_info*) malloc (sizeof(struct process_info)) ;
   if ( t->info == NULL )
-	  printf ( "Error3\n") ;
+  {
+	  return TID_ERROR ;
+  }
+
   sema_init(&t->info->sema, 0) ;
   t->info->waited = false ;
   t->info->tid = tid ;
@@ -361,7 +365,6 @@ thread_create (const char *name, int priority,
 
   // Changes in the new thread
   t->parent = cur ;
-  /*t->info = info ;*/
   list_init(&t->children) ;
 
   // Initialize the list of the open files
@@ -479,7 +482,9 @@ thread_exit (void)
 
 #ifdef USERPROG
   // Close the executable. ENABLE_WRITE will be implicitly called
+  lock_acquire ( &file_lock ) ;
   file_close ( thread_current()->executable ) ;
+  lock_release ( &file_lock ) ;
 
   process_exit ();
 #endif

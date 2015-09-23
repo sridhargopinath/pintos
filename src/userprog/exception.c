@@ -153,7 +153,6 @@ page_fault (struct intr_frame *f)
   // These details are provided in the PINTOS documentation
   f->eip = (void (*) (void)) f->eax;
   f->eax = 0xffffffff;
-  /*printf ( "inside page_fault\n\n" ) ;*/
 
   // Exit the current thread if the page fault occurs
   exit(-1) ;

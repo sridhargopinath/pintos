@@ -110,12 +110,22 @@ start_process (void *arguments_)
   char *temp ;
 
   // Create another copy of the arguments to extract the FILENAME of the executable
+  // EXIT the thread if the memory allocation fails
   char *file_name = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
   if ( file_name == NULL )
   {
-	  printf ( "Error\n") ;
+	  palloc_free_page (arguments_);
+	  if ( thread_current()->parent != NULL )
+	  {
+		  lock_acquire(&exec_lock) ;
+		  thread_current()->info->status = PROCESS_ERROR ;
+		  cond_signal ( &exec_cond, &exec_lock ) ;
+		  lock_release(&exec_lock) ;
+	  }
+	  exit(-1) ;
   }
 
+  // Copy the arguments
   strlcpy(file_name, arguments, strlen((char*)arguments)+1) ;
 
   // Get FILENAME of the executable
@@ -155,7 +165,7 @@ start_process (void *arguments_)
 		  cond_signal ( &exec_cond, &exec_lock ) ;
 		  lock_release(&exec_lock) ;
 	  }
-	  thread_exit ();
+	  exit(-1) ;
   }
 
   // LOAD was successful
