@@ -10,7 +10,7 @@ struct lock exec_lock ;
 // Lock for file system. Only 1 process inside filesys code. Is also used in process.c
 struct lock file_lock ;
 
-// Used in exception.c to exit a process when a page fault occurs 
+// Used in exception.c to exit a process when a page fault occurs
 void exit ( int status ) ;
 
 void syscall_init (void);

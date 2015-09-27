@@ -54,7 +54,7 @@ static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
 
-void syscall_init (void) 
+void syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
@@ -501,7 +501,7 @@ int allocateFD ()
 // The system call number is present as the first entry on top of the stack
 // Above that, the arguments for the specific system call are present as 4 byte (32 bit) addresses
 // All the addresses are virtually and should be converted to physical addresses before use
-static void syscall_handler (struct intr_frame *f) 
+static void syscall_handler (struct intr_frame *f)
 {
   // Get the syscall number from the stack pointer
   int sysNum  = get_word_user((int*)f->esp) ;
@@ -514,7 +514,7 @@ static void syscall_handler (struct intr_frame *f)
   int i ;
   for ( i = 0 ; i < n ; i ++ )
 	  pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
-  
+
   switch ( sysNum )
   {
 	  case SYS_HALT:		halt () ;

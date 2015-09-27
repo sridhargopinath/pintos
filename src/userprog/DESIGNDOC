@@ -28,19 +28,47 @@ Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+No changes are made for implementing Argument Passing
+
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
+Argument passing was done in start_process function. I did the stack setup after the load() function was called. Hence I needed to create another copy of the arguments since the strtok_r function would modify the contents of the arguments.
+This another copy was sent to the strtok_r function to extract the FILENAME which was the first argument of the arguments vector.
+This is passed to the load() function.
+After this, passArgs() function is called which initializes the stack and puts the arguments on the stack.
+
+In passArgs() to load the arguments onto the stack, first the arguments are passed to the strtok_r function. Here the pointer to each arguments is returned. All these pointers are stored in an array of character pointers. Once this is done, I iterate over the character pointers, and push these onto the stack by using the stack pointer. At this point, I store the value of the stack pointer in another array which basically becomes the contents of the argv[].
+The difference of the stack pointer and the PYSBASE will give me the amount of bytes the stack currently has. If this is not a multiple of 4, I will push some 0's till it becomes a multiple of 4.
+Then push the contents of argv[] stored in the array. Then the value of argv, argc and 0 are pushed one after the other.
+
+Before the arguments are pushed on to the stack, it is sent to verifyArgs() function. This function verifies if the total amount of bytes present in the arguments is not more than the length of the stack page. This means that the arguments should not overflow the stack page.
+I do an iteration over the arguments string to find out its length. If it exceeds, I terminate the process.
+
+
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+Pintos is a multi-threaded operating system. This means that there maybe more than one thread which are calling strtok() function at the same time. In strtok(), we send the string when we are calling the function for the first time. After that, we will just send a NULL pointer. The function has a static pointer which stores the pointer to the last location to the string which was called last time.
+It maybe possible that two threads are tokenizing two different strings at the same time. Now, the internal pointer does not have any knowledge of which of which string belongs to which thread. It may mess up the whole thing.
+That is why pintos uses strtok_r() which is the modified strtok() which asks the user to send the internal pointer and uses that when tokenizing a string.
+This puts the burden on the thread to maintain the pointer outside the function.
+
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+First, flexibility. Having the shell able to pass the arguments gives the user flexibility to communicate with the programs like he wants.
+Different shell will parse the arguments differently which is what the user would like. Now, different shells which parse the arguments differently can be developed which is then provided to the user.
+
+Second, error detection. This reduces the amount of work the kernel does to detect the errors when parsing arguments. Arguments passing is the place which required a lot of security. There are a lot of ways by which a person can try to break the system during this process. Putting this burden on the shell will reduce the work done by the kernel. Now shell will take care of the security while the kernel can assume that the arguments passed are always safe.
+
 
 			     SYSTEM CALLS
 			     ============
@@ -51,14 +79,82 @@ Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+In SYSCALL.H:
+// Synchronization tools used in EXEC system call in start_process of process.c
+struct condition exec_cond ;
+struct lock exec_lock ;
+
+// Lock for file system. Only 1 process inside filesys code. Is also used in process.c
+struct lock file_lock ;
+
+
+In SYSCALL.C:
+// Typedef used for process IDs
+typedef int pid_t ;
+
+// This structure is used to keep track of all the files opened by a particular thread
+struct file_info
+{
+	int fd ;
+	struct file *file ;
+	struct list_elem elem ;
+} ;
+
+// Lock for assigning unique File Descriptors upon opening each file
+struct lock fd_lock ;
+
+
+In THREAD.H:
+// enum to keep track of the status of the process
+enum process_status
+{
+	PROCESS_STARTING,
+	PROCESS_LOADED,
+	PROCESS_ERROR
+} ;
+
+// Structure to keep track of the info of the children. Used to get the return status of a child
+struct process_info
+{
+	tid_t tid ;							// TID of the thread
+	struct thread *t ;					// Pointer to the thread this process belongs to
+	enum process_status status ;		// To keep track of the status of the Process
+	struct list_elem elem ;				// This element is used to insert into the list of children
+	struct semaphore sema ;				// Semaphore used to wait the parent thread
+	int exit_status ;					// Exit status which is returned on wait system call
+	bool waited ;						// TRUE if the parent has already waited for the children
+} ;
+
+struct thread {
+	struct thread *parent ;				// Parent thread
+	struct process_info *info ;			// Pointer to the entry of the structure in the parent thread
+	struct list children ;				// List of all the children of this thread
+
+	struct list files ;					// List of all the files opened by this thread
+
+	struct file *executable ;			// Executable file of the current process (thread)
+}
+
+
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
+
+I have defined a struct called file_info which is associated with each open file. Whenever a thread opens a file, a new object of the struct is created.
+Each thread has a list of open files associated with it. The list_elem elements inside the file_info struct is used to insert the new object into the list in the thread. By doing this, we are associating a the struct object to the thread indirectly.
+
+File descriptors are unique within the OS. There is a function which returns a new unique file descriptor every time I call it. Whenever an open system call is called, this function assigns new fd to that open file. Hence, the file descriptors are unique within the OS as well as the single process.
+
 
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+I have used the page_fault approach as well as the verify before dereference approach. For reading and writing data into the kernel space or invalid pointer cases, page fault will occur and after that I simply call the exit(-1) syscall to exit the process and there by release all the memory that was allocated to the thread.
+When verifying the buffer, I use the verify before dereference to check if all the memory that the buffer is pointing to is valid and mapped. Else, it would be difficult to track the locks that the thread has acquired before it went to page_fault() because the fault would occur inside the filesystem.
+Hence, I verify all the buffers and filenames before sending them to the system calls and after that if invalid memory is accessed, page_fault occurs during which I will just exit the thread.
+
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -67,8 +163,17 @@ Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+Since I am using the page_fault approach to verify the addresses, pagedir_get_page() will never be called.
+
+
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+I have used a process_info structure to keep track of the details of the child termination statuses. Every thread has an object of this structure along with a list of children which it has created. These children also have a process_info object. Hence, every parent thread can see the status of its children.
+Whenever a child exits, it sets the exit status in the process_info structure.
+If the parent thread wants to wait on a thread, it will see if the child has already exited. If so, it just picks up the status which was stored by the child and just returns it to the caller. It also sets the 'waited' flag after this. This is to ensure that the parent thread cannot wait on the same thread again.
+If the child thread has not exited yet, then the parent thread uses the semaphore present in the process_info to go to sleep. The thread will sleep till the child exits. When the child exits, it will set the returns status and wakes up the parent thread by signalling the same semaphore that the parent thread was waiting for.
+
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -84,12 +189,26 @@ Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
 
+First we need to read the system call number from the stack. This is done using the "reading a byte" from the user space as specified in the documentation.
+By reading the syscall number, we get to know the number of arguments we need to read as well. Since all the arguments are 32 bit size, we can read it easily. Then each argument is send to the specified system call handler. For example, in the case of write system call the file descriptor of the file to write, the buffer pointer and the size of the buffer is sent to the handler function.
+If any of the data is wrong in the above case, it will result in a page fault and inside the page fault handler, I just exit the thread by calling exit(-1). The memory held by the thread is released inside the exit() function.
+If the arguments read are correct, then we need to verify the buffer to see if memory lies inside the user space itself. This is done by calling verifyBuffer function. Here, we read the buffer using the "reading a byte" from user space function. We read the buffer for the SIZE amount of bytes. If all the bytes are valid, then the buffer is error-free. Since we only interfere with the SIZE amount of buffer, I do not check the buffer beyond that point.
+After this, locks are acquired by the process and then filesystem code is executed. No error related to the validity of the memory will occur since we have verified all the addresses which will be used by the filesystem code.
+Thus, we do not need to do lock recovery in this case.
+Since I assume that faults inside filesystem code will never happen, I will be looking into this during the 4th project.
+
+
 ---- SYNCHRONIZATION ----
 
 >> B7: The "exec" system call returns -1 if loading the new executable
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
+
+I use a enum inside the process_info structure which keeps track of the state of the process. Whenever a process execs another process, it will return once the thread has been created. It will not know whether the thread was successfully loaded or not. Hence, once the parent thread returns after the thread was created, I will use a conditional variable to track this. The parent process will call the cond_wait once it has returned from the process_execute. This will block the process till the child process wakes it up.
+In the child process, once the child returns from the load() function, if the loading was successful, it will change its state to PROCESS_LOADED else it will be changed to PROCESS_FAIL and exit the process. It will then signal its parent to wake up. This is done by calling the cond_signal().
+Once the parent process wakes up, it will check the status of the child process. If the status of the process is FAIL, then it means the child was terminated and hence it will return -1. Else, this indicates that the loading of the process was successful and it returns the PID of the process to the calling function.
+
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -98,16 +217,39 @@ Sridhar Gopinath <sridhar.g@csa.iisc.ernet.in>
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
 
+If the child thread has not exited yet, then the parent thread uses the semaphore present in the process_info to go to sleep. The thread will sleep till the child exits. When the child exits, it will set the returns status and wakes up the parent thread by signalling the same semaphore that the parent thread was waiting for.
+If the child has already exited, it would have set the semaphore value to 1. Hence a call to sema_down will just return immediately. The parent process then just picks up the status which was stored by the child and just returns it to the caller. It also sets the 'waited' flag after this. This is to ensure that the parent thread cannot wait on the same thread again.
+When a thread exits, all the resources of children are deleted and it sets the parent field in the struct thread to NULL. Hence whenever a child wants to update its info in the PROCESS_INFO structure, it first checks if the structure exits by seeing if the parent is still alive. If the parent had died, it would have freed the structure as well.
+Hence if a child process exits, it will just set the exit status in the structure but it won't be freed from the memory because the parent might still wait for that particular thread. When the parent process exits only then it will be released.
+
+
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
 
+I managed to make use of the fault to kernel when accessing a invalid address as much as possible. This reduced the call to pagedir_get_page() to 0.
+I did most of the checking using the code to read the user memeory that was provided in the documentation. By doing this, I am doing less work when compared to validating the user memory before dereferencing and also I am also providing security by exiting the process which tries to access invalid memory.
+This is the best way to handle user memory access that I could think of.
+
+
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
+Advantages:
+Processes that tries to open the files which are opened by other processes will not be able to succeed.
+Processes can quickly check if an FD belongs to it or not by going through the list of open files.
+Each process will never know what files have been opened by other processes there by providing security for processes.
+
+Disadvantages:
+Since I am using int to store the file descriptors, I can overflow if a large number of files are opened.
+
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+I did not change that.
+
 
 			   SURVEY QUESTIONS
 			   ================

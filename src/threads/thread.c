@@ -347,6 +347,8 @@ thread_create (const char *name, int priority,
   t->info = (struct process_info*) malloc (sizeof(struct process_info)) ;
   if ( t->info == NULL )
   {
+	  // IMPORTANT: We need to deallocate all the memory before and exit the thread
+	  // I do not know a way of doing this. We will just return ERROR for now
 	  return TID_ERROR ;
   }
 

@@ -48,12 +48,50 @@ process_execute (const char *file_name)
   return tid;
 }
 
+// Function to verify if the size of the command-line arguments is less the size of the stack page
+// Returns the number of arguments present. Else, -1
+static int verifyArgs ( const char *argument )
+{
+	int i = 0, count = 0  ;
+	bool spaces = true ;
+	for ( i = 0 ; argument[i] != '\0' ; i ++ )
+	{
+		// Check if page size is exceeded
+		if ( i+1 >= PGSIZE )
+			return -1 ;
+		
+		// Remove contiguous spaces between arguments
+		if ( spaces == true )
+		{
+			if ( argument[i] == ' ' )
+				continue ;
+			else
+				spaces = false ;
+		}
+
+		if ( argument[i] == ' ' )
+		{
+			count ++ ;
+			spaces = true ;
+		}
+	}
+
+	return count ;
+}
+
 // Function to split the arguments in the command line to tokens
 // Initialize the stack according to the documentation
-// IMPORTANT: Have put a limit of number of arguments to 50. More than 50 command line arguments will FAIL
 static void *passArgs ( char *argument, char *sp )
 {
-  char *vector[50], *save_ptr, *token, *argv[50] ;
+
+  // Verify if the number of arguments does not over flow the stack page
+  int nargs = verifyArgs ( argument ) ;
+  if ( nargs == -1 )
+  {
+	  return NULL ;
+  }
+
+  char *vector[nargs], *save_ptr, *token, *argv[nargs] ;
   int count = 0, i, index = 0 ;
 
   // Split the input into set of argument vector
@@ -147,7 +185,13 @@ start_process (void *arguments_)
 
   // Setup the STACK if the load was successful
   if ( success )
+  {
 	  if_.esp = passArgs(arguments, if_.esp);
+
+	  // If the number of arguments overflows the stack page
+	  if ( if_.esp == NULL )
+		  success = false ;
+  }
 
   // Free the resources
   palloc_free_page (arguments_);
@@ -584,7 +628,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE ;
+        *esp = PHYS_BASE;
       else
         palloc_free_page (kpage);
     }
