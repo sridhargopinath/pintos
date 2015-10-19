@@ -20,6 +20,7 @@
 
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -143,6 +144,8 @@ static void *passArgs ( char *argument, char *sp )
 static void
 start_process (void *arguments_)
 {
+  struct thread *cur = thread_current() ;
+
   // Create another copy as directed by PINTOS
   char *arguments = arguments_ ;
   char *temp ;
@@ -153,10 +156,10 @@ start_process (void *arguments_)
   if ( file_name == NULL )
   {
 	  palloc_free_page (arguments_);
-	  if ( thread_current()->parent != NULL )
+	  if ( cur->parent != NULL )
 	  {
 		  lock_acquire(&exec_lock) ;
-		  thread_current()->info->status = PROCESS_ERROR ;
+		  cur->info->status = PROCESS_ERROR ;
 		  cond_signal ( &exec_cond, &exec_lock ) ;
 		  lock_release(&exec_lock) ;
 	  }
@@ -177,6 +180,20 @@ start_process (void *arguments_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
+  // Initialize the supplymentary hash table
+  success = page_init(&cur->pages) ;
+  if ( !success )
+  {
+	  if ( cur->parent != NULL )
+	  {
+		  lock_acquire(&exec_lock) ;
+		  cur->info->status = PROCESS_ERROR ;
+		  cond_signal ( &exec_cond, &exec_lock ) ;
+		  lock_release(&exec_lock) ;
+	  }
+	  exit(-1) ;
+  }
 
   // Try loading the executable
   lock_acquire ( &file_lock ) ;
@@ -202,21 +219,22 @@ start_process (void *arguments_)
   /* If load failed, quit. */
   if (!success)
   {
-	  if ( thread_current()->parent != NULL )
+	  if ( cur->parent != NULL )
 	  {
 		  lock_acquire(&exec_lock) ;
-		  thread_current()->info->status = PROCESS_ERROR ;
+		  cur->info->status = PROCESS_ERROR ;
 		  cond_signal ( &exec_cond, &exec_lock ) ;
 		  lock_release(&exec_lock) ;
 	  }
+	  hash_destroy(&cur->pages, NULL) ;
 	  exit(-1) ;
   }
 
   // LOAD was successful
-  if ( thread_current()->parent != NULL )
+  if ( cur->parent != NULL )
   {
 	  lock_acquire(&exec_lock) ;
-	  thread_current()->info->status = PROCESS_LOADED ;
+	  cur->info->status = PROCESS_LOADED ;
 	  cond_signal ( &exec_cond, &exec_lock ) ;
 	  lock_release(&exec_lock) ;
   }

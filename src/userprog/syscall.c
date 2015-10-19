@@ -136,6 +136,9 @@ void exit ( int status )
 
 		free(f) ;
 	}
+	
+	// Free the Supplymentary hash table
+	hash_destroy ( &cur->pages, NULL ) ;
 
 	// process_exit will be called inside this function
 	thread_exit() ;
