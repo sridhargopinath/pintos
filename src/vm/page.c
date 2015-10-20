@@ -68,13 +68,13 @@ static bool install_page (void *upage, void *kpage, bool writable)
 // Return FALSE if it is a bad address
 bool page_allocate ( void *addr )
 {
-	printf ( "Page allocate address: %p\n", addr ) ;
-	printf ( "Entered page_allocate of %s\n", thread_current()->name) ;
+	/*printf ( "Page allocate address: %p\n", addr ) ;*/
+	/*printf ( "Entered page_allocate of %s\n", thread_current()->name) ;*/
 	struct thread *cur = thread_current() ;
 
 	// Get the page number with the offset set to 0
 	void *upage = pg_round_down(addr) ;
-	printf ( "UPAGE is %p\n", upage ) ;
+	/*printf ( "UPAGE is %p\n", upage ) ;*/
 
 	// Find in the supplymentary page table
 	struct page *p = page_lookup ( upage ) ;
@@ -91,12 +91,12 @@ bool page_allocate ( void *addr )
 		printf ( "NO MORE PAGES. Palloc failed\n" ) ;
 		return false;
 	}
-	printf ( "Address of the kernel page allocated: %p\n", kpage ) ;
+	/*printf ( "Address of the kernel page allocated: %p\n", kpage ) ;*/
 
 	file_seek(cur->executable, p->ofs) ;
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
 
-	printf ( "file read of %s\n", thread_current()->name) ;
+	/*printf ( "file read of %s\n", thread_current()->name) ;*/
 	/* Load this page. */
 	if (file_read (cur->executable, kpage, p->read_bytes) != (int) p->read_bytes)
 	{
@@ -105,7 +105,7 @@ bool page_allocate ( void *addr )
 	}
 	memset (kpage + p->read_bytes, 0, zero_bytes);
 
-	printf ( "install page: WRITABLE is %d\n", p->writable ) ;
+	/*printf ( "install page: WRITABLE is %d\n", p->writable ) ;*/
 	/* Add the page to the process's address space. */
 	if (!install_page (p->addr, kpage, p->writable))
 	{
@@ -113,7 +113,7 @@ bool page_allocate ( void *addr )
 		return false;
 	}
 	p->kpage = kpage ;
-	printf ( "Kpage address is %p\n", p->kpage) ;
+	/*printf ( "Kpage address is %p\n", p->kpage) ;*/
 
 	return true ;
 }

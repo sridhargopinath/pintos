@@ -519,9 +519,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   // Save the FILE * of the executable to implement DENY WRITE
   t->executable = file ;
-  printf ( "Size of the hash table is %d\n", hash_size(&t->pages) ) ;
-
-  // Check if the hash
+  /*printf ( "Size of the hash table is %d\n", hash_size(&t->pages) ) ;*/
 
   if ( success )
 	  file_deny_write ( file ) ;
@@ -618,8 +616,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	  p->writable = writable ;
 	  p->kpage = NULL ;
 
-	  printf ( "Segment address: %p writable=%d\n", upage, writable ) ;
+	  /*printf ( "Segment address: %p writable=%d\n", upage, writable ) ;*/
 	  page_insert ( &cur->pages, &p->hash_elem ) ;
+
+	  ofs += page_read_bytes ;
 
       /*[> Get a page of memory. <]*/
       /*uint8_t *kpage = palloc_get_page (PAL_USER);*/

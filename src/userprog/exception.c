@@ -150,14 +150,14 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
- printf ("Page fault at %p: %s error %s page in %s context.\n",
-		  fault_addr,
-		  not_present ? "not present" : "rights violation",
-		  write ? "writing" : "reading",
-		  user ? "user" : "kernel");
+ /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/
+		  /*fault_addr,*/
+		  /*not_present ? "not present" : "rights violation",*/
+		  /*write ? "writing" : "reading",*/
+		  /*user ? "user" : "kernel");*/
 
-  printf ( "Faulting address is %p by thread %s\n", fault_addr, thread_current()->name ) ;
-  printf ( "Size of hash is %d\n", hash_size(&thread_current()->pages) ) ;
+  /*printf ( "Faulting address is %p by thread %s\n", fault_addr, thread_current()->name ) ;*/
+  /*printf ( "Size of hash is %d\n", hash_size(&thread_current()->pages) ) ;*/
   // Get the faulting address and check if it is a valid address
   bool success = page_allocate ( fault_addr ) ;
 
