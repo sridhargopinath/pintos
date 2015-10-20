@@ -105,9 +105,9 @@ bool page_allocate ( void *addr )
 	}
 	memset (kpage + p->read_bytes, 0, zero_bytes);
 
-	printf ( "install page read of %s\n", thread_current()->name) ;
+	printf ( "install page: WRITABLE is %d\n", p->writable ) ;
 	/* Add the page to the process's address space. */
-	if (!install_page (upage, kpage, p->writable))
+	if (!install_page (p->addr, kpage, p->writable))
 	{
 		palloc_free_page (kpage);
 		return false;
