@@ -1,12 +1,17 @@
 #include <hash.h>
 #include <debug.h>
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 // Supplymentary page table
 struct page
 {
-  struct hash_elem hash_elem; /* Hash table element. */
-  void *addr;                 /* Virtual address. */
+  struct hash_elem hash_elem ;		/* Hash table element. */
+  void *addr ;						/* Virtual address. */
+  void *kpage ;						/* Physical address */
+  int32_t ofs ;						/* Offset within the executable */
+  size_t read_bytes ;				/* Size of bytes to be read */
+  bool writable ;					/* Writable or Read-Only */
 } ;
 
 // Initialize the supplymentary hash table
@@ -23,3 +28,6 @@ struct page * page_lookup (void *address) ;
 
 // Insert an element into the supplymentary hash table
 struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new ) ;
+
+// Allocate a frame to the faluting address
+bool page_allocate ( void *addr ) ;

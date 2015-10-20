@@ -220,6 +220,7 @@
 ./userprog/gdt.c
 ./userprog/syscall.c
 ./userprog/exception.c
+./vm/page.c
 ./utils/squish-unix.c
 ./utils/setitimer-helper.c
 ./utils/squish-pty.c
@@ -284,6 +285,7 @@
 ./userprog/exception.h
 ./userprog/process.h
 ./userprog/gdt.h
+./vm/page.h
 ./lib/round.h
 ./lib/limits.h
 ./lib/stddef.h

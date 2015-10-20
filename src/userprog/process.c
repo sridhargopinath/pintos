@@ -519,6 +519,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   // Save the FILE * of the executable to implement DENY WRITE
   t->executable = file ;
+  printf ( "Size of the hash table is %d\n", hash_size(&t->pages) ) ;
+
+  // Check if the hash
+
   if ( success )
 	  file_deny_write ( file ) ;
   
@@ -592,11 +596,13 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
+  struct thread *cur = thread_current() ;
+
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
+  /*file_seek (file, ofs);*/
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -605,25 +611,35 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+	  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+	  p->addr = upage ;
+	  p->ofs = ofs ;
+	  p->read_bytes = page_read_bytes ;
+	  p->writable = writable ;
+	  p->kpage = NULL ;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+	  printf ( "Segment address: %p writable=%d\n", upage, writable ) ;
+	  page_insert ( &cur->pages, &p->hash_elem ) ;
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+      /*[> Get a page of memory. <]*/
+      /*uint8_t *kpage = palloc_get_page (PAL_USER);*/
+      /*if (kpage == NULL)*/
+        /*return false;*/
+
+      /*[> Load this page. <]*/
+      /*if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)*/
+        /*{*/
+          /*palloc_free_page (kpage);*/
+          /*return false; */
+        /*}*/
+      /*memset (kpage + page_read_bytes, 0, page_zero_bytes);*/
+
+      /*[> Add the page to the process's address space. <]*/
+      /*if (!install_page (upage, kpage, writable)) */
+        /*{*/
+          /*palloc_free_page (kpage);*/
+          /*return false; */
+        /*}*/
 
       /* Advance. */
       read_bytes -= page_read_bytes;

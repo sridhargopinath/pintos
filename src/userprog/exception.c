@@ -6,6 +6,7 @@
 #include "threads/thread.h"
 
 #include "userprog/syscall.h"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -124,9 +125,9 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  /*bool not_present;  [> True: not-present page, false: writing r/o page. <]*/
-  /*bool write;        [> True: access was write, false: access was read. <]*/
-  /*bool user;         [> True: access by user, false: access by kernel. <]*/
+  bool not_present;  /* True: not-present page, false: writing r/o page. */
+  bool write;        /* True: access was write, false: access was read. */
+  bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
@@ -146,25 +147,36 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  /*not_present = (f->error_code & PF_P) == 0;*/
-  /*write = (f->error_code & PF_W) != 0;*/
-  /*user = (f->error_code & PF_U) != 0;*/
+  not_present = (f->error_code & PF_P) == 0;
+  write = (f->error_code & PF_W) != 0;
+  user = (f->error_code & PF_U) != 0;
+ printf ("Page fault at %p: %s error %s page in %s context.\n",
+		  fault_addr,
+		  not_present ? "not present" : "rights violation",
+		  write ? "writing" : "reading",
+		  user ? "user" : "kernel");
+
+  printf ( "Faulting address is %p by thread %s\n", fault_addr, thread_current()->name ) ;
+  printf ( "Size of hash is %d\n", hash_size(&thread_current()->pages) ) ;
+  // Get the faulting address and check if it is a valid address
+  bool success = page_allocate ( fault_addr ) ;
 
   // These details are provided in the PINTOS documentation
-  f->eip = (void (*) (void)) f->eax;
-  f->eax = 0xffffffff;
+  /*f->eip = (void (*) (void)) f->eax;*/
+  /*f->eax = 0xffffffff;*/
 
   // Exit the current thread if the page fault occurs
-  exit(-1) ;
+  if ( !success )
+	  exit(-1) ;
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-/*  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f); */
+ /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/
+		  /*fault_addr,*/
+		  /*not_present ? "not present" : "rights violation",*/
+		  /*write ? "writing" : "reading",*/
+		  /*user ? "user" : "kernel");*/
+  /*kill (f);*/
 }
 
