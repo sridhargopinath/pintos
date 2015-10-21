@@ -5,6 +5,7 @@
 #include "threads/palloc.h"
 #include "filesys/file.h"
 #include "userprog/pagedir.h"
+#include "vm/frame.h"
 
 // Initialize the supplymentary hash table
 bool page_init (struct hash *pages)
@@ -85,7 +86,11 @@ bool page_allocate ( void *addr )
 		printf ( "HASH INDEXING FAILED!\n" ) ;
 
 	/* Get a page of memory. */
-	uint8_t *kpage = palloc_get_page (PAL_USER);
+	/*uint8_t *kpage = palloc_get_page (PAL_USER);*/
+	lock_acquire(&frame) ;
+	uint8_t *kpage = frame_allocate() ;
+	lock_release(&frame) ;
+
 	if (kpage == NULL)
 	{
 		printf ( "NO MORE PAGES. Palloc failed\n" ) ;
