@@ -85,5 +85,12 @@ void * frame_allocate (void)
 // Deallocate a frame and update the same in the frame table
 void frame_deallocate (void *kpage)
 {
+	struct frame *f = frame_lookup(kpage) ;
+
+	palloc_free_page(kpage) ;
+	hash_delete( &frames, &f->hash_elem) ;
+	free(f) ;
+
+	return ;
 
 }

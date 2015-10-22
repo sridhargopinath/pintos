@@ -21,6 +21,7 @@
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -185,6 +186,7 @@ start_process (void *arguments_)
   success = page_init(&cur->pages) ;
   if ( !success )
   {
+	  palloc_free_page (arguments_);
 	  if ( cur->parent != NULL )
 	  {
 		  lock_acquire(&exec_lock) ;
@@ -192,6 +194,7 @@ start_process (void *arguments_)
 		  cond_signal ( &exec_cond, &exec_lock ) ;
 		  lock_release(&exec_lock) ;
 	  }
+	  free(file_name) ;
 	  exit(-1) ;
   }
 
@@ -590,7 +593,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   struct thread *cur = thread_current() ;
@@ -614,6 +617,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	  p->read_bytes = page_read_bytes ;
 	  p->writable = writable ;
 	  p->kpage = NULL ;
+	  p->stack = false ;
 
 	  /*printf ( "Segment address: %p writable=%d\n", upage, writable ) ;*/
 	  page_insert ( &cur->pages, &p->hash_elem ) ;
@@ -656,15 +660,33 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  /*kpage = palloc_get_page (PAL_USER | PAL_ZERO);*/
+  lock_acquire(&frame) ;
+  kpage = frame_allocate() ;
+  lock_release(&frame) ;
   if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
-    }
+  {
+	  memset(kpage, 0, PGSIZE) ;
+	  success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+	  if (success)
+	  {
+		  *esp = PHYS_BASE;
+
+		  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+		  p->addr = ((uint8_t *) PHYS_BASE) - PGSIZE ;
+		  p->kpage = kpage ;
+		  p->stack = true ;
+
+		  page_insert ( &thread_current()->pages, &p->hash_elem ) ;
+	  }
+	  else
+	  {
+		  /*palloc_free_page (kpage);*/
+		  lock_acquire(&frame) ;
+		  frame_deallocate(kpage) ;
+		  lock_release(&frame) ;
+	  }
+  }
   return success;
 }
 

@@ -98,6 +98,9 @@ void exit ( int status )
 {
 	struct thread *cur = thread_current() ;
 
+	if ( lock_held_by_current_thread(&file_lock) )
+		lock_release(&file_lock) ;
+
 	printf ( "%s: exit(%d)\n", cur->name, status ) ;
 
 	// TO implement WAIT syscall:

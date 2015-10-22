@@ -6,6 +6,7 @@
 #include "filesys/file.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
+#include "threads/malloc.h"
 
 // Initialize the supplymentary hash table
 bool page_init (struct hash *pages)
@@ -67,7 +68,7 @@ static bool install_page (void *upage, void *kpage, bool writable)
 
 // Function to allocate a frame to the given address
 // Return FALSE if it is a bad address
-bool page_allocate ( void *addr )
+bool get_page( void *addr )
 {
 	/*printf ( "Page allocate address: %p\n", addr ) ;*/
 	/*printf ( "Entered page_allocate of %s\n", thread_current()->name) ;*/
@@ -80,10 +81,12 @@ bool page_allocate ( void *addr )
 	// Find in the supplymentary page table
 	struct page *p = page_lookup ( upage ) ;
 	if ( p == NULL )
+	{
+		/*PANIC("Request for a page not present in the supplymentary page table\n") ;*/
 		return false ;
+	}
 
-	if ( p->addr != upage )
-		printf ( "HASH INDEXING FAILED!\n" ) ;
+	ASSERT( p->addr == upage ) ;
 
 	/* Get a page of memory. */
 	/*uint8_t *kpage = palloc_get_page (PAL_USER);*/
@@ -93,10 +96,12 @@ bool page_allocate ( void *addr )
 
 	if (kpage == NULL)
 	{
-		printf ( "NO MORE PAGES. Palloc failed\n" ) ;
+		printf ( "NO MORE FRAMES. Palloc failed\n" ) ;
 		return false;
 	}
 	/*printf ( "Address of the kernel page allocated: %p\n", kpage ) ;*/
+
+	p->kpage = kpage ;
 
 	file_seek(cur->executable, p->ofs) ;
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
@@ -105,6 +110,7 @@ bool page_allocate ( void *addr )
 	/* Load this page. */
 	if (file_read (cur->executable, kpage, p->read_bytes) != (int) p->read_bytes)
 	{
+		printf ( "FILE READ FAILED\n" ) ;
 		palloc_free_page (kpage);
 		return false;
 	}
@@ -121,4 +127,33 @@ bool page_allocate ( void *addr )
 	/*printf ( "Kpage address is %p\n", p->kpage) ;*/
 
 	return true ;
+}
+
+bool grow_stack ( void *addr )
+{
+	/*printf ( "stack growth at %p\n", addr ) ;*/
+	void *upage = pg_round_down(addr) ;
+
+	lock_acquire(&frame) ;
+	void *kpage = frame_allocate() ;
+	lock_release(&frame) ;
+
+	memset(kpage, 0, PGSIZE) ;
+
+	struct page *p = (struct page*) malloc (sizeof(struct page)) ;
+	p->addr = upage ;
+	p->kpage = kpage ;
+	p->stack = true ;
+
+	page_insert ( &thread_current()->pages, &p->hash_elem ) ;
+
+	install_page ( p->addr, p->kpage, true ) ;
+
+	return true ;
+}
+
+// Remove the page from the supplymentary page table
+void page_deallocate ( void *kpage UNUSED)
+{
+	return ;
 }

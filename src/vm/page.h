@@ -12,6 +12,7 @@ struct page
   int32_t ofs ;						/* Offset within the executable */
   size_t read_bytes ;				/* Size of bytes to be read */
   bool writable ;					/* Writable or Read-Only */
+  bool stack ;
 } ;
 
 // Initialize the supplymentary hash table
@@ -30,4 +31,13 @@ struct page * page_lookup (void *address) ;
 struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new ) ;
 
 // Allocate a frame to the faluting address
-bool page_allocate ( void *addr ) ;
+//bool page_allocate ( void *addr ) ;
+
+// Load the page from the executable containing the virtual address ADDR
+bool get_page ( void *addr ) ;
+
+// Allocate extra page for the stack
+bool grow_stack(void *addr) ;
+
+// Remove the entry from the supplymentary page table
+void page_deallocate(void *kpage) ;

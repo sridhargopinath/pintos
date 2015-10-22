@@ -129,6 +129,8 @@ struct thread
 	struct file *executable ;			// Executable file of the current process (thread)
 
 	struct hash pages ;					// Supplementary page table
+
+	void *esp ;							// Saving the stack pointer
 #endif
 
     /* Owned by thread.c. */
