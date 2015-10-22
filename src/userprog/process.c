@@ -226,7 +226,6 @@ start_process (void *arguments_)
 		  cond_signal ( &exec_cond, &exec_lock ) ;
 		  lock_release(&exec_lock) ;
 	  }
-	  hash_destroy(&cur->pages, NULL) ;
 	  exit(-1) ;
   }
 
