@@ -130,7 +130,7 @@ struct thread
 
 	struct hash pages ;					// Supplementary page table
 
-	void *esp ;							// Saving the stack pointer
+	uint32_t esp ;							// Saving the stack pointer
 #endif
 
     /* Owned by thread.c. */

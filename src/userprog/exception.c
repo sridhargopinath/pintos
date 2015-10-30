@@ -150,6 +150,22 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+  
+  void *stackPtr ;
+  if ( user )
+  {
+	  /*printf ("User fault\n");*/
+	  /*printf ( "Pointer: %p\n", f->esp);*/
+	  /*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
+	  stackPtr = f->esp ;
+  }
+  else
+  {
+	  /*printf ( "Kernel fault\n");*/
+	  /*printf ( "Pointer: %p\n", f->esp);*/
+	  /*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
+	  stackPtr = (void*)thread_current()->esp ;
+  }
  /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/
 		  /*fault_addr,*/
 		  /*not_present ? "not present" : "rights violation",*/
@@ -159,7 +175,7 @@ page_fault (struct intr_frame *f)
   /*printf ( "Faulting address is %p by thread %s\n", fault_addr, thread_current()->name ) ;*/
   /*printf ( "Size of hash is %d\n", hash_size(&thread_current()->pages) ) ;*/
 
-  /*printf ( "fault_addr: %p esp: %p by %s\n", fault_addr, f->esp, thread_current()->name ) ;*/
+  /*printf ( "fault_addr: %p esp: %p by %s\n", fault_addr, thread_current()->esp, thread_current()->name ) ;*/
   if ( !is_user_vaddr(fault_addr) )
   {
 	  f->eip = (void (*) (void)) f->eax;
@@ -167,7 +183,7 @@ page_fault (struct intr_frame *f)
 	  exit(-1) ;
   }
 
-  if ( f->esp < PHYS_BASE - 0x00800000 )
+  if ( stackPtr < PHYS_BASE - 0x00800000 )
   {
 	  /*printf ( "Not a valid esp\n" ) ;*/
 	  f->eip = (void (*) (void)) f->eax;
@@ -176,7 +192,7 @@ page_fault (struct intr_frame *f)
   }
 
   bool success ;
-  if ( fault_addr >= f->esp - 32 )
+  if ( fault_addr >= stackPtr - 32 )
   {
 	  /*printf ( "Stack Growth\n" ) ;*/
 	  success = grow_stack(fault_addr) ;
@@ -199,7 +215,8 @@ page_fault (struct intr_frame *f)
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
-     which fault_addr refers. */
+     whict
+	 fault_addr refers. */
  /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/
 		  /*fault_addr,*/
 		  /*not_present ? "not present" : "rights violation",*/

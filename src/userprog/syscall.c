@@ -18,6 +18,8 @@
 // Typedef used for process IDs
 typedef int pid_t ;
 
+/*static void *esp ;*/
+
 // This structure is used to keep track of all the files opened by a particular thread
 struct file_info
 {
@@ -311,6 +313,7 @@ int filesize ( int fd )
 // Reads SIZE bytes from the file with file descriptor FD into the BUFFER
 int read ( int fd, void *buffer, unsigned size )
 {
+	/*printf ( "Inside read esp: %p\n", thread_current()->esp ) ;*/
 	// Reading from STD OUTPUT
 	if ( fd == 1 )
 		return 0 ;
@@ -509,6 +512,9 @@ int allocateFD ()
 // All the addresses are virtually and should be converted to physical addresses before use
 static void syscall_handler (struct intr_frame *f)
 {
+  // Storing the stack pointer address in the thread structure to access later
+  thread_current()->esp = (uint32_t)f->esp ;
+
   // Get the syscall number from the stack pointer
   int sysNum  = get_word_user((int*)f->esp) ;
 
