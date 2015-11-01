@@ -369,8 +369,9 @@ thread_create (const char *name, int priority,
   t->parent = cur ;
   list_init(&t->children) ;
 
-  // Initialize the list of the open files
+  // Initialize the lists used by this thread
   list_init(&t->files) ;
+  list_init(&t->mmaps) ;
 
   #endif
 

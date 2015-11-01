@@ -131,6 +131,8 @@ struct thread
 	struct hash pages ;					// Supplementary page table
 
 	uint32_t esp ;							// Saving the stack pointer
+
+	struct list mmaps ;
 #endif
 
     /* Owned by thread.c. */

@@ -37,6 +37,7 @@ struct map_info
 {
 	int mapid ;
 	struct file *file ;
+	struct list_elem elem ;
 } ;
 
 // Lock for assigning unique File Descriptors upon opening each file
@@ -71,6 +72,7 @@ static void check_file ( const uint8_t *addr) ;
 static mapid_t allocateMAPID (void) ;
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
+static struct map_info *get_map_info ( mapid_t mapping ) ;
 
 
 void syscall_init (void)
@@ -164,6 +166,19 @@ void exit ( int status )
 		free(f) ;
 	}
 	
+	// Clear the map_info objects
+	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; )
+	{
+		struct map_info *m = list_entry ( e, struct map_info, elem ) ;
+		e = list_next(e) ;
+
+		munmap(m->mapid) ;
+		/*file_close(f->file) ;*/
+		/*list_remove(&f->elem) ;*/
+
+		/*free(f) ;*/
+	}
+
 	// Free the Supplymentary hash table
 	hash_destroy ( &cur->pages, NULL ) ;
 
@@ -493,20 +508,24 @@ mapid_t mmap ( int fd, void *addr )
 		addr += PGSIZE ;
 	}
 	
-	/*struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));*/
-	/*if ( newMap == NULL )*/
-		/*PANIC("MMAP: Failed to allocate memory for map_info structure\n");*/
+	struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));
+	if ( newMap == NULL )
+		PANIC("MMAP: Failed to allocate memory for map_info structure\n");
 
-	/*newMap->mapid = allocateMAPID() ;*/
-	/*newMap->file = file ;*/
+	newMap->mapid = allocateMAPID() ;
+	newMap->file = file_info->file ;
+	list_push_back(&cur->mmaps, &newMap->elem) ;
 
-	mapid_t mapid = allocateMAPID() ;
-	/*printf ("return\n");*/
-	return mapid ;
+	return newMap->mapid ;
 }
 
-void munmap ( int mapping )
+void munmap ( mapid_t mapping )
 {
+	struct map_info *map = get_map_info ( mapping ) ;
+	if ( map == NULL )
+		return ;
+
+
 
 	return ;
 }
@@ -583,6 +602,30 @@ struct file_info *get_file_info ( int fd )
 		return NULL ;
 
 	return f ;
+}
+
+// Get the map_info structure for a given Mapping ID
+struct map_info *get_map_info ( mapid_t mapping )
+{
+	struct thread *cur = thread_current() ;
+
+	// Check if the FD given is opened by the current thread
+	bool check = false ;
+	struct list_elem *e ;
+	struct map_info *m ;
+	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; e = list_next(e) )
+	{
+		m = list_entry(e, struct map_info, elem ) ;
+		if ( m->mapid == mapping  )
+		{
+			check = true ;
+			break ;
+		}
+	}
+	if ( check == false )
+		return NULL ;
+
+	return m ;
 }
 
 // Function used allocate MAPID to each memory mapping
