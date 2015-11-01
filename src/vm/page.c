@@ -103,12 +103,12 @@ bool get_page( void *addr )
 
 	p->kpage = kpage ;
 
-	file_seek(cur->executable, p->ofs) ;
+	file_seek(p->file, p->ofs) ;
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
 
 	/*printf ( "file read of %s\n", thread_current()->name) ;*/
 	/* Load this page. */
-	if (file_read (cur->executable, kpage, p->read_bytes) != (int) p->read_bytes)
+	if (file_read (p->file, kpage, p->read_bytes) != (int) p->read_bytes)
 	{
 		printf ( "FILE READ FAILED\n" ) ;
 		palloc_free_page (kpage);

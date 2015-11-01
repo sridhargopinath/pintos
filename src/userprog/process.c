@@ -593,7 +593,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
+load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   struct thread *cur = thread_current() ;
@@ -612,11 +612,13 @@ load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 	  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+	  p->file = file ;
 	  p->addr = upage ;
 	  p->ofs = ofs ;
 	  p->read_bytes = page_read_bytes ;
 	  p->writable = writable ;
 	  p->kpage = NULL ;
+
 	  p->stack = false ;
 
 	  /*printf ( "Segment address: %p writable=%d\n", upage, writable ) ;*/

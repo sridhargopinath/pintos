@@ -154,16 +154,16 @@ page_fault (struct intr_frame *f)
   void *stackPtr ;
   if ( user )
   {
-	  /*printf ("User fault\n");*/
-	  /*printf ( "Pointer: %p\n", f->esp);*/
-	  /*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
+	  printf ("User fault\n");
+	  printf ( "Pointer: %p\n", f->esp);
+	  printf ( "thread Pointer: %p\n", thread_current()->esp);
 	  stackPtr = f->esp ;
   }
   else
   {
-	  /*printf ( "Kernel fault\n");*/
-	  /*printf ( "Pointer: %p\n", f->esp);*/
-	  /*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
+	  printf ( "Kernel fault\n");
+	  printf ( "Pointer: %p\n", f->esp);
+	  printf ( "thread Pointer: %p\n", thread_current()->esp);
 	  stackPtr = (void*)thread_current()->esp ;
   }
  /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/

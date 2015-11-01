@@ -7,6 +7,8 @@
 struct page
 {
   struct hash_elem hash_elem ;		/* Hash table element. */
+  struct file *file ;
+
   void *addr ;						/* Virtual address. */
   void *kpage ;						/* Physical address */
   int32_t ofs ;						/* Offset within the executable */

@@ -14,9 +14,13 @@
 #include "userprog/process.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
+#include "vm/page.h"
 
 // Typedef used for process IDs
 typedef int pid_t ;
+
+// Typedef for Memory Mapping
+typedef int mapid_t ;
 
 /*static void *esp ;*/
 
@@ -28,8 +32,18 @@ struct file_info
 	struct list_elem elem ;
 } ;
 
+// Structure to keep Map info for each memory-mapped region
+struct map_info
+{
+	int mapid ;
+	struct file *file ;
+} ;
+
 // Lock for assigning unique File Descriptors upon opening each file
 struct lock fd_lock ;
+
+// Lock when assigning unique Map ID for each mapped region
+struct lock map_lock ;
 
 static void syscall_handler (struct intr_frame *);
 
@@ -46,12 +60,15 @@ static int write ( int fd, void *buffer, unsigned size ) ;
 static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
+static mapid_t mmap ( int fd, void *addr ) ;
+static void munmap ( mapid_t mapping ) ;
 
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
 static void check_buffer ( const uint8_t *addr, int size ) ;
 static void check_file ( const uint8_t *addr) ;
 
+static mapid_t allocateMAPID (void) ;
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 
@@ -69,6 +86,9 @@ void syscall_init (void)
 
   // Initialize the File Descriptor lock
   lock_init(&fd_lock) ;
+
+  // Initialze the Map ID lock
+  lock_init(&map_lock) ;
 }
 
 // Array to store the number of arguments required for each system call
@@ -243,6 +263,7 @@ bool remove ( const char *file )
 // Opens an already existing file
 int open ( const char *file )
 {
+	printf ( "Inside open\n" ) ;
 	// Check the validity of the address of the file and also the filename
 	check_file ( (uint8_t *)file ) ;
 
@@ -293,6 +314,7 @@ int open ( const char *file )
 
 	lock_release ( &file_lock ) ;
 
+	printf ( "Fininsh open\n");
 	return info->fd ;
 }
 
@@ -420,6 +442,72 @@ void close ( int fd )
 	return ;
 }
 
+mapid_t mmap ( int fd, void *addr )
+{
+	printf ( "Inside mmap\n" ) ;
+	return -1 ;
+	/*struct thread *cur = thread_current() ;*/
+
+	/*if ( pg_ofs(addr) != 0 )*/
+		/*return -1 ;*/
+
+	/*if ( is_user_vaddr(addr) == false )*/
+		/*return -1 ;*/
+
+	/*struct file_info *file_info = get_file_info(fd) ;*/
+	/*if ( file_info == NULL )*/
+		/*return -1 ;*/
+
+	/*printf ("Before file_length\n");*/
+	/*lock_acquire(&fd_lock) ;*/
+	/*int size = file_length(file_info->file) ;*/
+	/*lock_release(&fd_lock) ;*/
+
+	/*if ( size == 0 )*/
+		/*return -1 ;*/
+
+	/*int read_bytes = size ;*/
+	/*int page_read_bytes, ofs = 0 ;*/
+	/*while ( read_bytes > 0 )*/
+	/*{*/
+		/*struct page *p = (struct page *) malloc ( sizeof(struct page));*/
+		/*if ( p == NULL )*/
+			/*PANIC("MMAP: SPTE memory allocation failed\n");*/
+
+		/*page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE ;*/
+
+		/*printf ("inside loop of mmap\n");*/
+		/*p->file = file_info->file ;*/
+		/*p->addr = addr ;*/
+		/*p->ofs = ofs ;*/
+		/*p->read_bytes = page_read_bytes ;*/
+		/*p->writable = true ;*/
+		/*p->kpage = NULL ;*/
+
+		/*page_insert ( &cur->pages, &p->hash_elem ) ;*/
+
+		/*read_bytes -= page_read_bytes ;*/
+		/*ofs += page_read_bytes ;*/
+		/*addr += PGSIZE ;*/
+	/*}*/
+	
+	/*[>struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));<]*/
+	/*[>if ( newMap == NULL )<]*/
+		/*[>PANIC("MMAP: Failed to allocate memory for map_info structure\n");<]*/
+
+	/*[>newMap->mapid = allocateMAPID() ;<]*/
+	/*[>newMap->file = file ;<]*/
+
+	/*mapid_t mapid = allocateMAPID() ;*/
+	/*printf ("return\n");*/
+	/*return mapid ;*/
+}
+
+void munmap ( int mapping )
+{
+	return ;
+}
+
 /* Reads a word at user virtual address UADDR.
 UADDR must be below PHYS_BASE.
 Returns the word value if successful, -1 if a segfault occurred. */
@@ -494,6 +582,18 @@ struct file_info *get_file_info ( int fd )
 	return f ;
 }
 
+// Function used allocate MAPID to each memory mapping
+mapid_t allocateMAPID ()
+{
+	static int mapid = 0 ;
+	int newMapID ;
+
+	lock_acquire(&map_lock) ;
+	newMapID = mapid++ ;
+	lock_release(&map_lock) ;
+
+	return newMapID ;
+}
 // Function used allocate File Descriptors for each open file
 int allocateFD ()
 {
@@ -527,6 +627,7 @@ static void syscall_handler (struct intr_frame *f)
   for ( i = 0 ; i < n ; i ++ )
 	  pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
 
+  printf ( "sysnum is %d\n", sysNum ) ;
   switch ( sysNum )
   {
 	  case SYS_HALT:		halt () ;
@@ -566,6 +667,13 @@ static void syscall_handler (struct intr_frame *f)
 							break ;
 
 	  case SYS_CLOSE:		close ( (int)pargs[0] ) ;
+							break ;
+
+	  case SYS_MMAP:		printf ( "mmap called\n");
+							f->eax = mmap ( (int)pargs[0], (void *)pargs[1] ) ;
+							break ;
+
+	  case SYS_MUNMAP:		munmap ( (mapid_t)pargs[0] ) ;
 							break ;
 
 	  default:				break ;
