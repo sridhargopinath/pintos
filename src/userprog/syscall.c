@@ -42,7 +42,8 @@ struct mmap_page
 // Structure to keep Map info for each memory-mapped region
 struct map_info
 {
-	int mapid ;
+	mapid_t mapid ;
+	int fd ;
 	struct file *file ;
 	struct list_elem elem ;
 	struct list pages ;
@@ -81,6 +82,7 @@ static mapid_t allocateMAPID (void) ;
 static int allocateFD (void) ;
 static struct file_info *get_file_info ( int fd ) ;
 static struct map_info *get_map_info ( mapid_t mapping ) ;
+static struct map_info *get_map_info_FD ( int fd ) ;
 
 
 void syscall_init (void)
@@ -168,10 +170,16 @@ void exit ( int status )
 		struct file_info *f = list_entry ( e, struct file_info, elem ) ;
 		e = list_next(e) ;
 
-		file_close(f->file) ;
-		list_remove(&f->elem) ;
+		close(f->fd);
+		/*if ( get_map_info_FD(f->fd) == NULL )*/
+		/*{*/
+			/*lock_acquire(&file_lock);*/
+			/*file_close(f->file) ;*/
+			/*lock_release(&file_lock);*/
+		/*}*/
 
-		free(f) ;
+		/*list_remove(&f->elem) ;*/
+		/*free(f) ;*/
 	}
 
 
@@ -464,11 +472,14 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
-	lock_acquire ( &file_lock ) ;
-	file_close ( f->file ) ;
-	lock_release ( &file_lock ) ;
+	struct map_info *m = get_map_info_FD(fd);
+	if ( m == NULL )
+	{
+		lock_acquire ( &file_lock ) ;
+		file_close ( f->file ) ;
+		lock_release ( &file_lock ) ;
+	}
 
-	// Free the memory
 	list_remove ( &f->elem) ;
 	free(f) ;
 
@@ -491,6 +502,9 @@ mapid_t mmap ( int fd, void *addr )
 	if ( file_info == NULL )
 		return -1 ;
 
+	if ( page_lookup(addr) != NULL )
+		return -1 ;
+
 	/*printf ("Before file_length\n");*/
 	lock_acquire(&file_lock) ;
 	int size = file_length(file_info->file) ;
@@ -504,6 +518,7 @@ mapid_t mmap ( int fd, void *addr )
 		PANIC("MMAP: Failed to allocate memory for map_info structure\n");
 
 	newMap->mapid = allocateMAPID() ;
+	newMap->fd = file_info->fd ;
 	newMap->file = file_info->file ;
 	list_push_back(&cur->mmaps, &newMap->elem) ;
 
@@ -513,6 +528,7 @@ mapid_t mmap ( int fd, void *addr )
 	int read_bytes = size ;
 	int page_read_bytes, ofs = 0 ;
 	int pagesNum = 0 ;
+	/*printf ( "file length in mmap is %u\n", file_length(file_info->file));*/
 	while ( read_bytes > 0 )
 	{
 		struct page *p = (struct page *) malloc ( sizeof(struct page));
@@ -522,6 +538,7 @@ mapid_t mmap ( int fd, void *addr )
 		page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE ;
 
 		/*printf ("inside loop of mmap\n");*/
+
 		p->file = file_info->file ;
 		p->addr = addr ;
 		p->ofs = ofs ;
@@ -536,6 +553,8 @@ mapid_t mmap ( int fd, void *addr )
 		addr += PGSIZE ;
 		pagesNum ++ ;
 
+		/*printf ( "Addr of file * is %p\n addr of addr %p\n offset is %u\nRead bytes is %d\nWritable is %d\n", p->file, p->addr, p->ofs, p->read_bytes, p->writable) ;*/
+
 		struct mmap_page *m_page = (struct mmap_page *)malloc(sizeof(struct mmap_page));
 		m_page->p = p ;
 		list_push_back(&newMap->pages, &m_page->elem) ;
@@ -543,11 +562,13 @@ mapid_t mmap ( int fd, void *addr )
 
 
 	/*printf ( "%d number of pages allocated using mmap\n",pagesNum);*/
+	/*printf ( "RETURN from MMAP\n");*/
 	return newMap->mapid ;
 }
 
 void munmap ( mapid_t mapping )
 {
+	/*printf ( "Inside unmap\n");*/
 	/*printPageTable();*/
 	/*printf ("size of hash before unmap is %d\n", hash_size(&thread_current()->pages) ) ;*/
 	struct thread *cur = thread_current() ;
@@ -579,6 +600,15 @@ void munmap ( mapid_t mapping )
 		free(map_page) ;
 		/*list_remove(e) ;*/
 	}
+
+	/*printf ("before close\n");*/
+	if ( get_file_info(map->fd) == NULL )
+	{
+		lock_acquire(&file_lock);
+		file_close(map->file);
+		lock_release(&file_lock);
+	}
+	/*printf ( "After close\n");*/
 
 	list_remove(&map->elem);
 	free(map) ;
@@ -686,6 +716,30 @@ struct map_info *get_map_info ( mapid_t mapping )
 	return m ;
 }
 
+// Get the map_info structure for a given FD
+struct map_info *get_map_info_FD ( int fd )
+{
+	struct thread *cur = thread_current() ;
+
+	// Check if the FD given is opened by the current thread
+	bool check = false ;
+	struct list_elem *e ;
+	struct map_info *m ;
+	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; e = list_next(e) )
+	{
+		m = list_entry(e, struct map_info, elem ) ;
+		if ( m->fd == fd  )
+		{
+			check = true ;
+			break ;
+		}
+	}
+	if ( check == false )
+		return NULL ;
+
+	return m ;
+}
+
 // Function used allocate MAPID to each memory mapping
 mapid_t allocateMAPID ()
 {
@@ -777,8 +831,10 @@ static void syscall_handler (struct intr_frame *f)
 							f->eax = mmap ( (int)pargs[0], (void *)pargs[1] ) ;
 							break ;
 
-		case SYS_MUNMAP:		munmap ( (mapid_t)pargs[0] ) ;
-								break ;
+		case SYS_MUNMAP:	//printf ("UNMAP IS called\n");
+							munmap ( (mapid_t)pargs[0] ) ;
+
+							break ;
 
 		default:				break ;
 	}

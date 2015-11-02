@@ -70,6 +70,7 @@ static bool install_page (void *upage, void *kpage, bool writable)
 // Return FALSE if it is a bad address
 bool get_page( void *addr )
 {
+	/*printf ( "Inside get_page\n");*/
 	/*printf ( "Page allocate address: %p\n", addr ) ;*/
 	/*printf ( "Entered page_allocate of %s\n", thread_current()->name) ;*/
 	/*struct thread *cur = thread_current() ;*/
@@ -79,10 +80,14 @@ bool get_page( void *addr )
 	/*printf ( "UPAGE is %p\n", upage ) ;*/
 
 	// Find in the supplymentary page table
+	/*printf ( "before lookup\n");*/
+	/*printPageTable();*/
 	struct page *p = page_lookup ( upage ) ;
+	/*printf ( "After lookup\n");*/
 	if ( p == NULL )
 	{
 		/*PANIC("Request for a page not present in the supplymentary page table\n") ;*/
+		/*printf ( "Return false\n");*/
 		return false ;
 	}
 
@@ -107,8 +112,12 @@ bool get_page( void *addr )
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
 
 	/*printf ( "file read of %s\n", thread_current()->name) ;*/
+	/*printf ( "File size is %u and read bytes is %d\n", file_length(p->file),p->read_bytes);*/
+	/*printf ( "Addr in file * is %p\n addr of addr %p\n offset is %u\nRead bytes is %d\nwritable is %d\n", p->file, p->addr, p->ofs, p->read_bytes, p->writable);*/
 	/* Load this page. */
-	if (file_read (p->file, kpage, p->read_bytes) != (int) p->read_bytes)
+	off_t read = file_read(p->file, p->kpage, p->read_bytes) ;
+	/*printf ( "output from file read is %u\n", read) ;*/
+	if (read != (int) p->read_bytes)
 	{
 		printf ( "FILE READ FAILED\n" ) ;
 		palloc_free_page (kpage);
@@ -171,7 +180,8 @@ void page_deallocate ( struct hash_elem *e, void *aux)
 	if ( kpage == NULL )
 	{
 		/*PANIC("Deallocation page which has kpage == NULL\n");*/
-		free(p) ;
+		if ( (int)aux != 1 )
+			free(p) ;
 		return ;
 	}
 
@@ -182,6 +192,9 @@ void page_deallocate ( struct hash_elem *e, void *aux)
 	lock_release(&frame);
 
 	/*hash_delete (&thread_current()->pages,&p->hash_elem) ;*/
+
+	/*printf ( "Before free in deallocate\n") ;*/
+	/*printPageTable();*/
 
 	pagedir_clear_page(thread_current()->pagedir, p->addr) ;
 
