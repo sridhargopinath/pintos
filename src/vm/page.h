@@ -43,3 +43,5 @@ bool grow_stack(void *addr) ;
 
 // Remove the entry from the supplymentary page table
 void page_deallocate ( struct hash_elem *h, void *aux ) ;
+
+void printPageTable (void) ;

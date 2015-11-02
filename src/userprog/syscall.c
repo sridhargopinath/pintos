@@ -15,6 +15,7 @@
 #include "threads/malloc.h"
 #include "devices/input.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 // Typedef used for process IDs
 typedef int pid_t ;
@@ -32,12 +33,19 @@ struct file_info
 	struct list_elem elem ;
 } ;
 
+struct mmap_page
+{
+	struct list_elem elem ;
+	struct page *p ;
+} ;
+
 // Structure to keep Map info for each memory-mapped region
 struct map_info
 {
 	int mapid ;
 	struct file *file ;
 	struct list_elem elem ;
+	struct list pages ;
 } ;
 
 // Lock for assigning unique File Descriptors upon opening each file
@@ -77,20 +85,20 @@ static struct map_info *get_map_info ( mapid_t mapping ) ;
 
 void syscall_init (void)
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+	intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
-  // Initialize lock used for accessing filesys
-  lock_init(&file_lock) ;
+	// Initialize lock used for accessing filesys
+	lock_init(&file_lock) ;
 
-  // Initialize the condtional lock used by EXEC
-  cond_init(&exec_cond) ;
-  lock_init(&exec_lock) ;
+	// Initialize the condtional lock used by EXEC
+	cond_init(&exec_cond) ;
+	lock_init(&exec_lock) ;
 
-  // Initialize the File Descriptor lock
-  lock_init(&fd_lock) ;
+	// Initialize the File Descriptor lock
+	lock_init(&fd_lock) ;
 
-  // Initialze the Map ID lock
-  lock_init(&map_lock) ;
+	// Initialze the Map ID lock
+	lock_init(&map_lock) ;
 }
 
 // Array to store the number of arguments required for each system call
@@ -165,7 +173,9 @@ void exit ( int status )
 
 		free(f) ;
 	}
-	
+
+
+	/*printf ( "Size of mmaps in EXIT is %d\n", list_size(&cur->mmaps)) ;*/
 	// Clear the map_info objects
 	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; )
 	{
@@ -181,7 +191,8 @@ void exit ( int status )
 
 	// Deallocated the pages allocated for this thread
 
-	/*printf ( "Size of hash is %d\n",hash_size(&cur->pages));*/
+	/*printf ( "Size of page table hash is %d\n",hash_size(&cur->pages));*/
+	/*printf ( "Size of frame table hash is %d\n",hash_size(&frames));*/
 
 	// Free the Supplymentary hash table
 	if ( hash_size(&cur->pages) != 0 )
@@ -481,15 +492,27 @@ mapid_t mmap ( int fd, void *addr )
 		return -1 ;
 
 	/*printf ("Before file_length\n");*/
-	lock_acquire(&fd_lock) ;
+	lock_acquire(&file_lock) ;
 	int size = file_length(file_info->file) ;
-	lock_release(&fd_lock) ;
+	lock_release(&file_lock) ;
 
 	if ( size == 0 )
 		return -1 ;
 
+	struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));
+	if ( newMap == NULL )
+		PANIC("MMAP: Failed to allocate memory for map_info structure\n");
+
+	newMap->mapid = allocateMAPID() ;
+	newMap->file = file_info->file ;
+	list_push_back(&cur->mmaps, &newMap->elem) ;
+
+	list_init(&newMap->pages);
+
+
 	int read_bytes = size ;
 	int page_read_bytes, ofs = 0 ;
+	int pagesNum = 0 ;
 	while ( read_bytes > 0 )
 	{
 		struct page *p = (struct page *) malloc ( sizeof(struct page));
@@ -511,47 +534,77 @@ mapid_t mmap ( int fd, void *addr )
 		read_bytes -= page_read_bytes ;
 		ofs += page_read_bytes ;
 		addr += PGSIZE ;
+		pagesNum ++ ;
+
+		struct mmap_page *m_page = (struct mmap_page *)malloc(sizeof(struct mmap_page));
+		m_page->p = p ;
+		list_push_back(&newMap->pages, &m_page->elem) ;
 	}
-	
-	struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));
-	if ( newMap == NULL )
-		PANIC("MMAP: Failed to allocate memory for map_info structure\n");
 
-	newMap->mapid = allocateMAPID() ;
-	newMap->file = file_info->file ;
-	list_push_back(&cur->mmaps, &newMap->elem) ;
 
+	/*printf ( "%d number of pages allocated using mmap\n",pagesNum);*/
 	return newMap->mapid ;
 }
 
 void munmap ( mapid_t mapping )
 {
+	/*printPageTable();*/
+	/*printf ("size of hash before unmap is %d\n", hash_size(&thread_current()->pages) ) ;*/
+	struct thread *cur = thread_current() ;
+
+	/*printf ( "Size of mmaps before munmap is %d\n", list_size(&cur->mmaps)) ;*/
 	struct map_info *map = get_map_info ( mapping ) ;
 	if ( map == NULL )
 		return ;
 
 
+	/*printf ( "Map id to unmap is %d\n",map->mapid) ;*/
+	struct list_elem *e, *next ;
+	for ( e = list_begin(&map->pages) ; e != list_end(&map->pages) ; e = next )
+	{
+		/*printf ( "Inside loop\n");*/
+		next = list_next(e) ;
+		struct mmap_page *map_page = list_entry(e, struct mmap_page, elem) ;
+		struct hash_elem *h = &map_page->p->hash_elem ;
 
+		/*printf ( "before deallocate::\n");*/
+		/*printPageTable();*/
+		page_deallocate(h, (void*)1) ;
+
+		/*printf ( "After deallocate::\n");*/
+		/*printPageTable();*/
+		hash_delete(&cur->pages, h);
+
+		free(map_page->p);
+		free(map_page) ;
+		/*list_remove(e) ;*/
+	}
+
+	list_remove(&map->elem);
+	free(map) ;
+
+	/*printf ( "after munmap:\n");*/
+	/*printPageTable();*/
 	return ;
 }
 
 /* Reads a word at user virtual address UADDR.
-UADDR must be below PHYS_BASE.
-Returns the word value if successful, -1 if a segfault occurred. */
+   UADDR must be below PHYS_BASE.
+   Returns the word value if successful, -1 if a segfault occurred. */
 int get_word_user (const int *uaddr)
 {
-  int result;
-  if ((void *) uaddr >= PHYS_BASE)
-    exit(-1);
+	int result;
+	if ((void *) uaddr >= PHYS_BASE)
+		exit(-1);
 
-  asm ("movl $1f, %0; movl %1, %0; 1:"
-    : "=&a" (result) : "m" (*uaddr));
-  return result;
+	asm ("movl $1f, %0; movl %1, %0; 1:"
+			: "=&a" (result) : "m" (*uaddr));
+	return result;
 }
 
 /*Reads a byte at user virtual address UADDR.
-UADDR must be below PHYS_BASE.
-Returns the byte value if successful, -1 if a segfault occurred.*/
+  UADDR must be below PHYS_BASE.
+  Returns the byte value if successful, -1 if a segfault occurred.*/
 int get_user (const uint8_t *uaddr)
 {
 	int result;
@@ -559,7 +612,7 @@ int get_user (const uint8_t *uaddr)
 		return -1;
 
 	asm ("movl $1f, %0; movzbl %1, %0; 1:"
-		: "=&a" (result) : "m" (*uaddr));
+			: "=&a" (result) : "m" (*uaddr));
 	return result;
 }
 
@@ -567,22 +620,22 @@ int get_user (const uint8_t *uaddr)
 // If not, exit
 void check_buffer ( const uint8_t *addr, int size )
 {
-  int tmp, i ;
-  for( i = 0 ; i <= size ; i++ )
-  {
-	  tmp = get_user(addr + i);
-	  if(tmp == -1)
-		  exit (-1);
-  }
-  return ;
+	int tmp, i ;
+	for( i = 0 ; i <= size ; i++ )
+	{
+		tmp = get_user(addr + i);
+		if(tmp == -1)
+			exit (-1);
+	}
+	return ;
 }
 
 // Checks if the first 14 bytes of the address are mapped and are in user address space
 // If not, exit
 void check_file ( const uint8_t *addr )
 {
-  check_buffer ( addr, 14 ) ;
-  return ;
+	check_buffer ( addr, 14 ) ;
+	return ;
 }
 
 // Get the file_info structure for a given File Descriptor
@@ -663,70 +716,70 @@ int allocateFD ()
 // All the addresses are virtually and should be converted to physical addresses before use
 static void syscall_handler (struct intr_frame *f)
 {
-  // Storing the stack pointer address in the thread structure to access later
-  thread_current()->esp = (uint32_t)f->esp ;
+	// Storing the stack pointer address in the thread structure to access later
+	thread_current()->esp = (uint32_t)f->esp ;
 
-  // Get the syscall number from the stack pointer
-  int sysNum  = get_word_user((int*)f->esp) ;
+	// Get the syscall number from the stack pointer
+	int sysNum  = get_word_user((int*)f->esp) ;
 
-  // Number of arguments required for this system call
-  int n = argsNum[sysNum] ;
+	// Number of arguments required for this system call
+	int n = argsNum[sysNum] ;
 
-  // Get N arguments from the stack and store their values as void pointers in an array
-  void *pargs[n] ;
-  int i ;
-  for ( i = 0 ; i < n ; i ++ )
-	  pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
+	// Get N arguments from the stack and store their values as void pointers in an array
+	void *pargs[n] ;
+	int i ;
+	for ( i = 0 ; i < n ; i ++ )
+		pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
 
-  /*printf ( "sysnum is %d\n", sysNum ) ;*/
-  switch ( sysNum )
-  {
-	  case SYS_HALT:		halt () ;
+	/*printf ( "sysnum is %d\n", sysNum ) ;*/
+	switch ( sysNum )
+	{
+		case SYS_HALT:		halt () ;
 							break ;
 
-	  case SYS_EXIT:		exit ( (int)pargs[0] ) ;
+		case SYS_EXIT:		exit ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
+		case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
 							break ;
 
-	  case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
+		case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
 							break ;
 
-	  case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
+		case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
+								break ;
+
+		case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
+								break ;
+
+		case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
 							break ;
 
-	  case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
+		case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
+		case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
 							break ;
 
-	  case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
+		case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
 							break ;
 
-	  case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
+		case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
 							break ;
 
-	  case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
+		case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
+		case SYS_CLOSE:		close ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
-							break ;
-
-	  case SYS_CLOSE:		close ( (int)pargs[0] ) ;
-							break ;
-
-	  case SYS_MMAP:		//printf ( "mmap called\n");
+		case SYS_MMAP:		//printf ( "mmap called\n");
 							f->eax = mmap ( (int)pargs[0], (void *)pargs[1] ) ;
 							break ;
 
-	  case SYS_MUNMAP:		munmap ( (mapid_t)pargs[0] ) ;
-							break ;
+		case SYS_MUNMAP:		munmap ( (mapid_t)pargs[0] ) ;
+								break ;
 
-	  default:				break ;
-  }
+		default:				break ;
+	}
 }

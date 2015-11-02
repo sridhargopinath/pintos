@@ -12,45 +12,45 @@
 bool page_init (struct hash *pages)
 {
 	bool success ;
-	
+
 	success = hash_init (pages, page_hash, page_less, NULL);
 
 	return success ;
 }
-	
+
 /* Returns a hash value for page p. */
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED)
 {
-  const struct page *p = hash_entry (p_, struct page, hash_elem);
-  return hash_bytes (&p->addr, sizeof p->addr);
+	const struct page *p = hash_entry (p_, struct page, hash_elem);
+	return hash_bytes (&p->addr, sizeof p->addr);
 }
 
 /* Returns true if page a precedes page b. */
 bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED)
 {
-  const struct page *a = hash_entry (a_, struct page, hash_elem);
-  const struct page *b = hash_entry (b_, struct page, hash_elem);
+	const struct page *a = hash_entry (a_, struct page, hash_elem);
+	const struct page *b = hash_entry (b_, struct page, hash_elem);
 
-  return a->addr < b->addr;
+	return a->addr < b->addr;
 }
 
 /* Returns the page containing the given virtual address,
    or a null pointer if no such page exists. */
 struct page * page_lookup (void *address)
 {
-  struct page p;
-  struct hash_elem *e;
+	struct page p;
+	struct hash_elem *e;
 
-  p.addr = address;
-  e = hash_find (&thread_current()->pages, &p.hash_elem);
-  return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
+	p.addr = address;
+	e = hash_find (&thread_current()->pages, &p.hash_elem);
+	return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
 
 // Insert an element into the supplymentary hash table
 struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new )
 {
 	struct hash_elem *e ;
-	
+
 	e = hash_insert (pages, new);
 
 	return e ;	
@@ -58,12 +58,12 @@ struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new )
 
 static bool install_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+	struct thread *t = thread_current ();
 
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+	/* Verify that there's not already a page at that virtual
+	   address, then map our page there. */
+	return (pagedir_get_page (t->pagedir, upage) == NULL
+			&& pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
 // Function to allocate a frame to the given address
@@ -156,7 +156,7 @@ bool grow_stack ( void *addr )
 // IMPORTANT: This is called only inside EXIT when the process is exiting
 // This function shouldn't be called explicitely
 /*void page_deallocate ( void *upage)*/
-void page_deallocate ( struct hash_elem *e, void *aux UNUSED )
+void page_deallocate ( struct hash_elem *e, void *aux)
 {
 	/*printf ( "Inside page page_deallocate\n");*/
 	/*struct page *p = page_lookup(upage) ;*/
@@ -185,7 +185,24 @@ void page_deallocate ( struct hash_elem *e, void *aux UNUSED )
 
 	pagedir_clear_page(thread_current()->pagedir, p->addr) ;
 
-	free(p) ;
+	if ( (int)aux != 1 )
+		free(p) ;
 
+	/*printf ( "after free in deallocate\n") ;*/
+	/*printPageTable();*/
+	return ;
+}
+
+void printPageTable(void)
+{
+	struct hash_iterator i;
+
+	hash_first (&i, &thread_current()->pages);
+	while (hash_next (&i))
+	{
+		struct page *p = hash_entry (hash_cur(&i), struct page, hash_elem);
+		/*struct foo *f = hash_entry (hash_cur (&i), struct foo, elem);*/
+		printf ( "Upage: %p kpage: %p\n", p->addr, p->kpage) ;
+	}
 	return ;
 }
