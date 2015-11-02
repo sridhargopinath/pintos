@@ -183,20 +183,20 @@ start_process (void *arguments_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   // Initialize the supplymentary hash table
-  success = page_init(&cur->pages) ;
-  if ( !success )
-  {
-	  palloc_free_page (arguments_);
-	  if ( cur->parent != NULL )
-	  {
-		  lock_acquire(&exec_lock) ;
-		  cur->info->status = PROCESS_ERROR ;
-		  cond_signal ( &exec_cond, &exec_lock ) ;
-		  lock_release(&exec_lock) ;
-	  }
-	  free(file_name) ;
-	  exit(-1) ;
-  }
+  /*success = page_init(&cur->pages) ;*/
+  /*if ( !success )*/
+  /*{*/
+	  /*palloc_free_page (arguments_);*/
+	  /*if ( cur->parent != NULL )*/
+	  /*{*/
+		  /*lock_acquire(&exec_lock) ;*/
+		  /*cur->info->status = PROCESS_ERROR ;*/
+		  /*cond_signal ( &exec_cond, &exec_lock ) ;*/
+		  /*lock_release(&exec_lock) ;*/
+	  /*}*/
+	  /*free(file_name) ;*/
+	  /*exit(-1) ;*/
+  /*}*/
 
   // Try loading the executable
   lock_acquire ( &file_lock ) ;
@@ -621,7 +621,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 	  p->stack = false ;
 
-	  /*printf ( "Segment address: %p writable=%d\n", upage, writable ) ;*/
 	  page_insert ( &cur->pages, &p->hash_elem ) ;
 
 	  ofs += page_read_bytes ;

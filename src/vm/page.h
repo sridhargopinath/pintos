@@ -42,4 +42,4 @@ bool get_page ( void *addr ) ;
 bool grow_stack(void *addr) ;
 
 // Remove the entry from the supplymentary page table
-void page_deallocate(void *kpage) ;
+void page_deallocate ( struct hash_elem *h, void *aux ) ;

@@ -86,6 +86,11 @@ void * frame_allocate (void)
 void frame_deallocate (void *kpage)
 {
 	struct frame *f = frame_lookup(kpage) ;
+	if ( f == NULL )
+	{
+		PANIC("Deallocating a FRAME not present\n");
+		return ;
+	}
 
 	palloc_free_page(kpage) ;
 	hash_delete( &frames, &f->hash_elem) ;

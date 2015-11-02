@@ -20,6 +20,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -372,6 +373,8 @@ thread_create (const char *name, int priority,
   // Initialize the lists used by this thread
   list_init(&t->files) ;
   list_init(&t->mmaps) ;
+
+  hash_init(&t->pages, page_hash, page_less, NULL ) ;
 
   #endif
 

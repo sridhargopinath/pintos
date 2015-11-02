@@ -179,8 +179,13 @@ void exit ( int status )
 		/*free(f) ;*/
 	}
 
+	// Deallocated the pages allocated for this thread
+
+	/*printf ( "Size of hash is %d\n",hash_size(&cur->pages));*/
+
 	// Free the Supplymentary hash table
-	hash_destroy ( &cur->pages, NULL ) ;
+	if ( hash_size(&cur->pages) != 0 )
+		hash_destroy ( &cur->pages, page_deallocate) ;
 
 	// process_exit will be called inside this function
 	thread_exit() ;

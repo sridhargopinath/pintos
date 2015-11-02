@@ -72,7 +72,7 @@ bool get_page( void *addr )
 {
 	/*printf ( "Page allocate address: %p\n", addr ) ;*/
 	/*printf ( "Entered page_allocate of %s\n", thread_current()->name) ;*/
-	struct thread *cur = thread_current() ;
+	/*struct thread *cur = thread_current() ;*/
 
 	// Get the page number with the offset set to 0
 	void *upage = pg_round_down(addr) ;
@@ -153,7 +153,39 @@ bool grow_stack ( void *addr )
 }
 
 // Remove the page from the supplymentary page table
-void page_deallocate ( void *kpage UNUSED)
+// IMPORTANT: This is called only inside EXIT when the process is exiting
+// This function shouldn't be called explicitely
+/*void page_deallocate ( void *upage)*/
+void page_deallocate ( struct hash_elem *e, void *aux UNUSED )
 {
+	/*printf ( "Inside page page_deallocate\n");*/
+	/*struct page *p = page_lookup(upage) ;*/
+	struct page *p = hash_entry ( e, struct page, hash_elem) ;
+	if ( p == NULL )
+	{
+		PANIC("Trying to deallocate the page not present");
+		return ;
+	} 
+
+	void *kpage = p->kpage ;
+	if ( kpage == NULL )
+	{
+		/*PANIC("Deallocation page which has kpage == NULL\n");*/
+		free(p) ;
+		return ;
+	}
+
+	/*printf ( "Frame deallocate: uaddr: %p kpage: %p\n", p->addr, p->kpage) ;*/
+
+	lock_acquire(&frame);
+	frame_deallocate(kpage) ;
+	lock_release(&frame);
+
+	/*hash_delete (&thread_current()->pages,&p->hash_elem) ;*/
+
+	pagedir_clear_page(thread_current()->pagedir, p->addr) ;
+
+	free(p) ;
+
 	return ;
 }
