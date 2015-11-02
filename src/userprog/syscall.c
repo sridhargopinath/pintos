@@ -139,15 +139,6 @@ void exit ( int status )
 
 	printf ( "%s: exit(%d)\n", cur->name, status ) ;
 
-	// TO implement WAIT syscall:
-	// Store the exit status of the current thread in the process_info structure
-	// Signal the semaphore to wake up the parent if the parent thread is waiting on it
-	// DO this only if PARENT is still alive
-	if ( cur->parent != NULL )
-	{
-		cur->info->exit_status = status ;
-		sema_up(&cur->info->sema) ;
-	}
 
 	// Clear the process info objects of all the children and free the memory
 	struct list_elem *e ;
@@ -163,6 +154,28 @@ void exit ( int status )
 
 		free(p) ;
 	}
+
+	/*printf ( "Reached 1\n");*/
+
+	/*printf ( "Size of mmaps in EXIT is %d\n", list_size(&cur->mmaps)) ;*/
+	// Clear the map_info objects
+	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; )
+	{
+		struct map_info *m = list_entry ( e, struct map_info, elem ) ;
+		e = list_next(e) ;
+
+		munmap(m->mapid) ;
+		/*file_close(f->file) ;*/
+		/*list_remove(&f->elem) ;*/
+
+		/*free(f) ;*/
+	}
+
+	/*printf ( "Reached 2\n");*/
+	// Deallocated the pages allocated for this thread
+
+	/*printf ( "Size of page table hash is %d\n",hash_size(&cur->pages));*/
+	/*printf ( "Size of frame table hash is %d\n",hash_size(&frames));*/
 
 	// Clear the file_info objects
 	for ( e = list_begin(&cur->files) ; e != list_end(&cur->files) ; )
@@ -182,29 +195,19 @@ void exit ( int status )
 		/*free(f) ;*/
 	}
 
-
-	/*printf ( "Size of mmaps in EXIT is %d\n", list_size(&cur->mmaps)) ;*/
-	// Clear the map_info objects
-	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; )
-	{
-		struct map_info *m = list_entry ( e, struct map_info, elem ) ;
-		e = list_next(e) ;
-
-		munmap(m->mapid) ;
-		/*file_close(f->file) ;*/
-		/*list_remove(&f->elem) ;*/
-
-		/*free(f) ;*/
-	}
-
-	// Deallocated the pages allocated for this thread
-
-	/*printf ( "Size of page table hash is %d\n",hash_size(&cur->pages));*/
-	/*printf ( "Size of frame table hash is %d\n",hash_size(&frames));*/
-
 	// Free the Supplymentary hash table
 	if ( hash_size(&cur->pages) != 0 )
 		hash_destroy ( &cur->pages, page_deallocate) ;
+
+	// TO implement WAIT syscall:
+	// Store the exit status of the current thread in the process_info structure
+	// Signal the semaphore to wake up the parent if the parent thread is waiting on it
+	// DO this only if PARENT is still alive
+	if ( cur->parent != NULL )
+	{
+		cur->info->exit_status = status ;
+		sema_up(&cur->info->sema) ;
+	}
 
 	// process_exit will be called inside this function
 	thread_exit() ;
@@ -402,6 +405,8 @@ int read ( int fd, void *buffer, unsigned size )
 	int read = file_read ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
+	/*printf ( "Data read\n");*/
+	/*write(1,buffer,size);*/
 	return read ;
 }
 
@@ -412,8 +417,10 @@ int write ( int fd, void *buffer, unsigned size )
 	if ( fd == 0 )
 		return 0 ;
 
+	/*printf ("reached 1\n");*/
 	// Check if the buffer is valid or not upto size bytes
 	check_buffer ( (uint8_t *)buffer, size ) ;
+	/*printf ("reached 2\n");*/
 
 	// Write to terminal
 	if ( fd == 1 )
@@ -423,10 +430,11 @@ int write ( int fd, void *buffer, unsigned size )
 		lock_release ( &file_lock ) ;
 	}
 
+	/*printf ("reached 3\n");*/
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return 0 ;
-
+	
 	lock_acquire ( &file_lock ) ;
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
@@ -475,10 +483,14 @@ void close ( int fd )
 	struct map_info *m = get_map_info_FD(fd);
 	if ( m == NULL )
 	{
+		/*printf ( "Mmap NULL\n");*/
 		lock_acquire ( &file_lock ) ;
 		file_close ( f->file ) ;
 		lock_release ( &file_lock ) ;
 	}
+	/*else*/
+		/*printf ("mmap not null\n");*/
+
 
 	list_remove ( &f->elem) ;
 	free(f) ;
@@ -496,6 +508,9 @@ mapid_t mmap ( int fd, void *addr )
 		return -1 ;
 
 	if ( is_user_vaddr(addr) == false )
+		return -1 ;
+
+	if ( addr == NULL )
 		return -1 ;
 
 	struct file_info *file_info = get_file_info(fd) ;
@@ -568,9 +583,8 @@ mapid_t mmap ( int fd, void *addr )
 
 void munmap ( mapid_t mapping )
 {
-	/*printf ( "Inside unmap\n");*/
+	/*printf ( "Inside munmap of %s\n", thread_current()->name);*/
 	/*printPageTable();*/
-	/*printf ("size of hash before unmap is %d\n", hash_size(&thread_current()->pages) ) ;*/
 	struct thread *cur = thread_current() ;
 
 	/*printf ( "Size of mmaps before munmap is %d\n", list_size(&cur->mmaps)) ;*/
@@ -579,6 +593,13 @@ void munmap ( mapid_t mapping )
 		return ;
 
 
+	/*printf ( "FD is %d\n", map->fd);*/
+	/*if ( map->file != get_file_info(map->fd)->file )*/
+		/*printf ( "FDs are not equal\n");*/
+
+	off_t old_ofs = tell(map->fd) ;
+	/*printf ( "Old ofs is %u\n", old_ofs);*/
+
 	/*printf ( "Map id to unmap is %d\n",map->mapid) ;*/
 	struct list_elem *e, *next ;
 	for ( e = list_begin(&map->pages) ; e != list_end(&map->pages) ; e = next )
@@ -586,8 +607,30 @@ void munmap ( mapid_t mapping )
 		/*printf ( "Inside loop\n");*/
 		next = list_next(e) ;
 		struct mmap_page *map_page = list_entry(e, struct mmap_page, elem) ;
-		struct hash_elem *h = &map_page->p->hash_elem ;
+		struct page *p = map_page->p ;
+		struct hash_elem *h = &p->hash_elem ;
 
+		void *upage = p->addr ;
+		bool is_dirty = pagedir_is_dirty(cur->pagedir,upage) ;
+		if ( is_dirty )
+		{
+			/*printf ( "Dirty\n");*/
+			/*write ( 1, upage, p->read_bytes) ;*/
+			seek(map->fd, p->ofs);
+			/*printf ( "seek\n");*/
+			/*printf ( "ofs: %d\n", tell(map->fd));*/
+			write(map->fd, upage, p->read_bytes) ;
+			/*printf ( "Write\n");*/
+			/*if ( written == p->read_bytes )*/
+				/*printf ( "Wrote successfully\n");*/
+			/*else*/
+				/*printf ( "Write failed: %u and %u\n", written, p->read_bytes);*/
+			/*lock_acquire(&file_lock);*/
+			/*file_seek(p->file, p->ofs) ;*/
+			/*file_write(p->file, upage, p->read_bytes);*/
+			/*lock_release(&file_lock);*/
+		}
+		
 		/*printf ( "before deallocate::\n");*/
 		/*printPageTable();*/
 		page_deallocate(h, (void*)1) ;
@@ -596,14 +639,17 @@ void munmap ( mapid_t mapping )
 		/*printPageTable();*/
 		hash_delete(&cur->pages, h);
 
-		free(map_page->p);
+		free(p);
 		free(map_page) ;
 		/*list_remove(e) ;*/
 	}
+	/*printf ( "Out of the loop\n");*/
+	seek(map->fd, old_ofs);
 
 	/*printf ("before close\n");*/
 	if ( get_file_info(map->fd) == NULL )
 	{
+		/*printf ( "Closing file in munmap\n");*/
 		lock_acquire(&file_lock);
 		file_close(map->file);
 		lock_release(&file_lock);
@@ -651,7 +697,7 @@ int get_user (const uint8_t *uaddr)
 void check_buffer ( const uint8_t *addr, int size )
 {
 	int tmp, i ;
-	for( i = 0 ; i <= size ; i++ )
+	for( i = 0 ; i <= size-1 ; i++ )
 	{
 		tmp = get_user(addr + i);
 		if(tmp == -1)

@@ -7,6 +7,7 @@
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 // Initialize the supplymentary hash table
 bool page_init (struct hash *pages)
@@ -115,7 +116,14 @@ bool get_page( void *addr )
 	/*printf ( "File size is %u and read bytes is %d\n", file_length(p->file),p->read_bytes);*/
 	/*printf ( "Addr in file * is %p\n addr of addr %p\n offset is %u\nRead bytes is %d\nwritable is %d\n", p->file, p->addr, p->ofs, p->read_bytes, p->writable);*/
 	/* Load this page. */
+
+	lock_acquire(&file_lock);
+	off_t old_ofs = file_tell(p->file) ;
 	off_t read = file_read(p->file, p->kpage, p->read_bytes) ;
+	file_seek(p->file,old_ofs);
+	lock_release(&file_lock);
+
+
 	/*printf ( "output from file read is %u\n", read) ;*/
 	if (read != (int) p->read_bytes)
 	{
