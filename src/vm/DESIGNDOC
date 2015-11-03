@@ -1,0 +1,309 @@
+       	    +---------------------------+
+		    |			CS 140			|
+		    | PROJECT 3: VIRTUAL MEMORY	|
+		    |	   DESIGN DOCUMENT		|
+		    +---------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Sridhar Gopinath <g.sridhar53@gmail.com>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			PAGE TABLE MANAGEMENT
+			=====================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+// Frame table entry
+struct frame
+{
+  struct hash_elem hash_elem ;
+  void *kpage ;
+  struct page *p ;
+  struct thread *t ;
+  struct list_elem elem ;
+} ;
+
+// Supplymentary page table
+struct page
+{
+  struct hash_elem hash_elem ;		/* Hash table element. */
+  struct file *file ;
+
+  void *addr ;						/* Virtual address. */
+  void *kpage ;						/* Physical address */
+  int32_t ofs ;						/* Offset within the executable */
+  size_t read_bytes ;				/* Size of bytes to be read */
+  bool writable ;					/* Writable or Read-Only */
+
+  bool stack ;
+
+  struct swap_slot *swap ;
+} ;
+
+// FRAME TABLE
+struct hash frames ;
+
+// Lock to access the frame table
+struct lock frame ;
+
+
+
+---- ALGORITHMS ----
+
+>> A2: In a few paragraphs, describe your code for locating the frame,
+>> if any, that contains the data of a given page.
+
+Since I am using a hash for supplymentary page table and also for the frame table, this task becomes really simple.
+For supplymentary page table, the key is the user virtual address and for the frame table, the key is kernel virtual address.
+For a given user virtual address, I will do a lookup of that address using page_lookup function. If an entry is there, a page table entry is returned.
+If a mapping to a kernel virtual address is present, then the value of kpage will be not null. This means that a frame containing this page exists. To get that frame table, I need to do a frame_lookup to get that.
+
+A given page can be in one of the following three states:
+a. It is in the memory
+b. It is indexed in the supplymentary page table but not yet brought to the memory.
+c. It is indexed and is in the swap
+
+I first check if the 'swap' member of the page structure is NULL. If not null, it means that the page is in the swap and doesn't have a valid frame yet. If the kpage member is null, it means that the page has been indexed but the page hasn't yet been brought to the memory.
+If kpage is not null, then a valid frame is present. This frame can be obtained by using the frame table hash data structure. The index for the hash is the kpage value. So, the struture with index as 'kpage' is the valid frame for the given page.
+
+
+>> A3: How does your code coordinate accessed and dirty bits between
+>> kernel and user virtual addresses that alias a single frame, or
+>> alternatively how do you avoid the issue?
+
+
+
+
+---- SYNCHRONIZATION ----
+
+>> A4: When two user processes both need a new frame at the same time,
+>> how are races avoided?
+
+This is handled by using a lock on the frame table. The lock is table before frame_allocate is called and released only after it is returned from the function.
+So even if two processes come at the same time, proper synchronizaiton is maintained.
+
+
+---- RATIONALE ----
+
+>> A5: Why did you choose the data structure(s) that you did for
+>> representing virtual-to-physical mappings?
+
+I used a hash table to keep the mapping from virtual to physical address. This data is stored in the supplymentary page table.
+Since there can be a lot of pages allocated to a paricular process, indexing such a large amount of data is really important. If we use a list, searching for a particular page will become tedious.
+I chose hash table because it makes it easy to index the page table for a particular virtual address. This is a common operation in my implementation so chosing hash table made this operation fast.
+
+
+		       PAGING TO AND FROM DISK
+		       =======================
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+// List of swap slots
+struct list swap_slots ;
+
+// Swap slot entry
+struct swap_slot
+{
+	struct list_elem elem ;
+
+	block_sector_t pos ;
+	struct page *p ;
+} ;
+
+// Bitmap to track the free swap slots
+struct bitmap *bitmap ;
+
+// Swap block pointer
+struct block *block ;
+
+
+---- ALGORITHMS ----
+
+>> B2: When a frame is required but none is free, some frame must be
+>> evicted.  Describe your code for choosing a frame to evict.
+
+I used FIFO page replacement algorithm to find the page to evict. I use a list to keep track of all the frames present in the memory.
+Whenever a new frame is allocated, it is inserted into the list.
+Since it is a FIFO replacement algorithm, I just need to pop the element at the front of the list and use it as the page which I want to evict. After eviction, I insert it into the back of the list.
+
+
+>> B3: When a process P obtains a frame that was previously used by a
+>> process Q, how do you adjust the page table (and any other data
+>> structures) to reflect the frame Q no longer has?
+
+Every frame table entry has a pointer to the corresponding supplymentary page table it corresponds to. When we want to evict a page which belongs to process Q and assign it to process P, first I get the page of process P which needs to be put into the frame.
+I will make that frame table entry to point to the page table entry of process P.
+At the same time, I keep the information inside page of process Q that its page is no longer present in the memory. I do this by making the kernel page entry to NULL.
+
+
+>> B4: Explain your heuristic for deciding whether a page fault for an
+>> invalid virtual address should cause the stack to be extended into
+>> the page that faulted.
+
+First I check if the faulting address is below PHYSBASE or not. If not, it is an invalid address.
+For user page faults, I can get the stack pointer by using the stack frame sent to the page fault.
+For kernel page faults, I keep a copy of the stack pointer in the thread structure of the current thread.
+If the fault address is greater than equal to (stack pointer - 32 bytes), then I can be sure that it is a valid access and that I should extend the stack.
+Else, exit the thread.
+
+
+---- SYNCHRONIZATION ----
+
+>> B5: Explain the basics of your VM synchronization design.  In
+>> particular, explain how it prevents deadlock.  (Refer to the
+>> textbook for an explanation of the necessary conditions for
+>> deadlock.)
+
+
+
+
+>> B6: A page fault in process P can cause another process Q's frame
+>> to be evicted.  How do you ensure that Q cannot access or modify
+>> the page during the eviction process?  How do you avoid a race
+>> between P evicting Q's frame and Q faulting the page back in?
+
+
+
+>> B7: Suppose a page fault in process P causes a page to be read from
+>> the file system or swap.  How do you ensure that a second process Q
+>> cannot interfere by e.g. attempting to evict the frame while it is
+>> still being read in?
+
+>> B8: Explain how you handle access to paged-out pages that occur
+>> during system calls.  Do you use page faults to bring in pages (as
+>> in user programs), or do you have a mechanism for "locking" frames
+>> into physical memory, or do you use some other design?  How do you
+>> gracefully handle attempted accesses to invalid virtual addresses?
+
+---- RATIONALE ----
+
+>> B9: A single lock for the whole VM system would make
+>> synchronization easy, but limit parallelism.  On the other hand,
+>> using many locks complicates synchronization and raises the
+>> possibility for deadlock but allows for high parallelism.  Explain
+>> where your design falls along this continuum and why you chose to
+>> design it this way.
+
+I have used many locks in my implementation to enable parallelism.
+I use a file lock whenever I am trying to read from the file system. This will happen when I am doing lazy demand paging for the executable and also for the memory mapped region.
+I have used a swap lock which is acquired by a thread when it is accessing the swap memory. This happens when a process is trying to swap out from the memory at which point it will be writing to the swap space or when the swapped page is coming back to the memory at which the swap block is being read into the memory.
+I have also used a lock to the global frame table which is used by all the processes. Frame table is accessed during eviction, demand paging etc. At these times proper synchronization is established.
+By using these locks, I was able to allow multiple processes to execute inside the virtual memory and there by providing a lot of parallelism in the operating system.
+
+
+			 MEMORY MAPPED FILES
+			 ===================
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Used to keep track of each memory mapped region
+struct map_info
+{
+	mapid_t mapid ;
+	int fd ;
+	struct file *file ;
+	struct list_elem elem ;
+	struct list pages ;
+} ;
+
+Keeps track of the pages which belongs to a particular mapped region
+struct mmap_page
+{
+	struct list_elem elem ;
+	struct page *p ;
+} ;
+
+typedef int mapid_t ;
+
+// Lock when assigning unique Map ID for each mapped region
+struct lock map_lock ;
+
+
+---- ALGORITHMS ----
+
+>> C2: Describe how memory mapped files integrate into your virtual
+>> memory subsystem.  Explain how the page fault and eviction
+>> processes differ between swap pages and other pages.
+
+Whenever MMAP system call is invoked, a new object of map_info structure is created. This will contain all the details of the memory mapped region.
+For the given FD, it will open the file and will create supplymentary page table entries for each of the pages that is present in the file which is being mapped.
+By doing this we are not copying the file into the memory. The pages are loaded lazily. Whenever a page fault occurs at the particular address corresponding to the memory mapped region, the page_lookup will return the page that corresponds to the supplymentary page table entry for that page.
+Since it is not yet loaded, now we have to do a file_read at that particular location and then get the data into the memory.
+Each memory map will have a unique ID across the OS. Along with this, each MMAP also contains the list of all the pages that it has acquired to simulate memory map.
+This is required when doing unmap. When memory unmap is called, the pages that correspond to the paricular memory map is readily available from the list. By just iterating over the list we can dellocate all the pages that correspond to the memory map.
+
+In my implementation, I have two different functions which will be invoked whenever a page fault occurs. One for getting a normal page and the other for growing the stack.
+I first analyze the fault address and compare it with the stack pointer at the time of the page fault. If the heuristic for stack growth is satisfied, then grow_stack will be called. Otherwise, get_page will called.
+If the stack page has been evicted from the memory, then grow stack will try to allocate a new stack page for the page fault.
+We need to first do a page_lookup to see if the stack page already exists in the memory. If not, then only we need to grow the stack. Else, we need to get that particular page from the swap block.
+Also, to distinguish between stack pages and the normal pages, I have a boolean flag in the page table which tells me whether a particular page is a stack page or not.
+
+
+>> C3: Explain how you determine whether a new file mapping overlaps
+
+I maintain a hash for the supplymentary page table entries. The key of this hash is the user virtual address. Whenever I am creating a new memory mapping, I need to loop through the length of the file and then create the page table entries.
+While I am doing this, I will do a page_lookup for the user virtual address that I am trying to map. If an entry already exists, this means that the memory mapping already exists and this implies that the current memory mapping will overlap that.
+At that time, I will return -1.
+
+
+---- RATIONALE ----
+
+>> C4: Mappings created with "mmap" have similar semantics to those of
+>> data demand-paged from executables, except that "mmap" mappings are
+>> written back to their original files, not to swap.  This implies
+>> that much of their implementation can be shared.  Explain why your
+>> implementation either does or does not share much of the code for
+>> the two situations.
+
+My implementation shares most of the code required for demand paging both the executable and also the memory mapping. The code for loading the page when a page fault occurs is exactly the same whether it is a memory mapped page or a page from the executable.
+This is possible only due to the fact that I am storing the file structure pointer and the data related to loading the page from the file in the supplymentary page table. This data is used when a page fault occurs and I need to demand page from the file.
+Hence the code for this remains the same.
+The only differance is when I am exiting the process, I explicitely call unmap for each of the mapped region so as to free the memory related to the memory mapped region.
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?

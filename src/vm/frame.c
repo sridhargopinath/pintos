@@ -114,7 +114,7 @@ void frame_deallocate (void *kpage)
 
 struct frame * evict_frame()
 {
-	int x ;
+	/*int x ;*/
 
 	struct list_elem *e ;
 	e = list_pop_front (&frame_list) ;
