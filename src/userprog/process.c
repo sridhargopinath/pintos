@@ -621,6 +621,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 	  p->stack = false ;
 
+	  p->swap = NULL ;
+
+
 	  page_insert ( &cur->pages, &p->hash_elem ) ;
 
 	  ofs += page_read_bytes ;
@@ -663,8 +666,11 @@ setup_stack (void **esp)
 
   /*kpage = palloc_get_page (PAL_USER | PAL_ZERO);*/
   lock_acquire(&frame) ;
-  kpage = frame_allocate() ;
+  struct frame *f = frame_allocate() ;
   lock_release(&frame) ;
+
+  kpage = f->kpage ;
+
   if (kpage != NULL) 
   {
 	  memset(kpage, 0, PGSIZE) ;
@@ -674,9 +680,17 @@ setup_stack (void **esp)
 		  *esp = PHYS_BASE;
 
 		  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+		  p->file = NULL ;
 		  p->addr = ((uint8_t *) PHYS_BASE) - PGSIZE ;
 		  p->kpage = kpage ;
+		  p->ofs = -1 ;
+		  p->read_bytes = -1 ;
+		  p->writable = true ;
 		  p->stack = true ;
+
+		  p->swap = NULL ;
+
+		  f->p = p ;
 
 		  page_insert ( &thread_current()->pages, &p->hash_elem ) ;
 	  }

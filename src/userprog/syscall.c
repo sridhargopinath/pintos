@@ -16,6 +16,7 @@
 #include "devices/input.h"
 #include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 // Typedef used for process IDs
 typedef int pid_t ;
@@ -194,6 +195,8 @@ void exit ( int status )
 		/*list_remove(&f->elem) ;*/
 		/*free(f) ;*/
 	}
+
+	invalidate_swap_slots(cur) ;
 
 	// Free the Supplymentary hash table
 	if ( hash_size(&cur->pages) != 0 )
@@ -561,6 +564,11 @@ mapid_t mmap ( int fd, void *addr )
 		p->writable = true ;
 		p->kpage = NULL ;
 
+		p->stack = false ;
+
+		p->swap = NULL ;
+
+
 		page_insert ( &cur->pages, &p->hash_elem ) ;
 
 		read_bytes -= page_read_bytes ;
@@ -609,6 +617,11 @@ void munmap ( mapid_t mapping )
 		struct mmap_page *map_page = list_entry(e, struct mmap_page, elem) ;
 		struct page *p = map_page->p ;
 		struct hash_elem *h = &p->hash_elem ;
+
+		if ( p->swap != NULL )
+		{
+			load_swap_slot(p,cur);
+		}
 
 		void *upage = p->addr ;
 		bool is_dirty = pagedir_is_dirty(cur->pagedir,upage) ;

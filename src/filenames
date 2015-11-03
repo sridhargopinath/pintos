@@ -220,6 +220,7 @@
 ./userprog/gdt.c
 ./userprog/syscall.c
 ./userprog/exception.c
+./vm/swap.c
 ./vm/page.c
 ./vm/frame.c
 ./utils/squish-unix.c
@@ -287,6 +288,7 @@
 ./userprog/process.h
 ./userprog/gdt.h
 ./vm/page.h
+./vm/swap.h
 ./vm/frame.h
 ./lib/round.h
 ./lib/limits.h

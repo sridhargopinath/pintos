@@ -8,6 +8,7 @@
 #include "vm/frame.h"
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "vm/swap.h"
 
 // Initialize the supplymentary hash table
 bool page_init (struct hash *pages)
@@ -94,11 +95,24 @@ bool get_page( void *addr )
 
 	ASSERT( p->addr == upage ) ;
 
+	// Page is in swap space
+	if ( p->swap != NULL )
+	{
+		/*printf ( "loading swap slot\n");*/
+		load_swap_slot(p,thread_current());
+		return true ;
+	}
+
 	/* Get a page of memory. */
 	/*uint8_t *kpage = palloc_get_page (PAL_USER);*/
 	lock_acquire(&frame) ;
-	uint8_t *kpage = frame_allocate() ;
+	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;
+
+	/*printf ( "Return from frame_allocate\n");*/
+	f->p = p ;
+	f->t = thread_current();
+	void *kpage = f->kpage ;
 
 	if (kpage == NULL)
 	{
@@ -151,16 +165,34 @@ bool grow_stack ( void *addr )
 	/*printf ( "stack growth at %p\n", addr ) ;*/
 	void *upage = pg_round_down(addr) ;
 
+	struct page *page = page_lookup(upage) ;
+	if ( page->swap != NULL )
+	{
+		/*printf ( "loading swap slot\n");*/
+		load_swap_slot(page,thread_current());
+		return true ;
+	}
+
 	lock_acquire(&frame) ;
-	void *kpage = frame_allocate() ;
+	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;
+
+	void *kpage = f->kpage ;
 
 	memset(kpage, 0, PGSIZE) ;
 
 	struct page *p = (struct page*) malloc (sizeof(struct page)) ;
+	p->file = NULL ;
 	p->addr = upage ;
 	p->kpage = kpage ;
+	p->ofs = -1 ;
+	p->read_bytes = -1 ;
+	p->writable = true ;
 	p->stack = true ;
+
+	p->swap = NULL ;
+
+	f->p = p ;
 
 	page_insert ( &thread_current()->pages, &p->hash_elem ) ;
 

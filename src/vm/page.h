@@ -1,3 +1,6 @@
+#ifndef VM_PAGE_H
+#define VM_PAGE_H
+
 #include <hash.h>
 #include <debug.h>
 #include "threads/thread.h"
@@ -14,7 +17,10 @@ struct page
   int32_t ofs ;						/* Offset within the executable */
   size_t read_bytes ;				/* Size of bytes to be read */
   bool writable ;					/* Writable or Read-Only */
+
   bool stack ;
+
+  struct swap_slot *swap ;
 } ;
 
 // Initialize the supplymentary hash table
@@ -45,3 +51,5 @@ bool grow_stack(void *addr) ;
 void page_deallocate ( struct hash_elem *h, void *aux ) ;
 
 void printPageTable (void) ;
+
+#endif

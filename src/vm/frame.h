@@ -1,3 +1,6 @@
+#ifndef VM_FRAME_H
+#define VM_FRAME_H
+
 #include <hash.h>
 #include "threads/synch.h"
 
@@ -7,12 +10,16 @@ struct hash frames ;
 // Lock to access the frame table
 struct lock frame ;
 
+struct list frame_list ;
+
 // Frame table entry
 struct frame
 {
   struct hash_elem hash_elem ;
   void *kpage ;
+  struct page *p ;
   struct thread *t ;
+  struct list_elem elem ;
 } ;
 
 // Initialize the frame table and the lock to synchronize the access to frame table
@@ -31,7 +38,11 @@ struct frame * frame_lookup (void *address) ;
 struct hash_elem * frame_insert ( struct hash_elem *new ) ;
 
 // Allocate a frame from user pool
-void * frame_allocate (void) ;
+struct frame * frame_allocate (void) ;
 
 // Deallocate the frame and update in the frame table
 void frame_deallocate (void *kpage) ;
+
+struct frame * evict_frame (void) ;
+
+#endif

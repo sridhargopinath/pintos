@@ -36,7 +36,10 @@
 #include "devices/ide.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
+#endif
+#ifdef VM
 #include "vm/frame.h"
+#include "vm/swap.h"
 #endif
 
 /* Page directory with kernel mappings only. */
@@ -289,6 +292,7 @@ run_task (char **argv)
 
   // Initialize the frame table
   frame_init() ;
+  swap_init() ;
 
   process_wait (process_execute (task));
 #else
