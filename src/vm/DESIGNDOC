@@ -62,7 +62,6 @@ struct hash frames ;
 struct lock frame ;
 
 
-
 ---- ALGORITHMS ----
 
 >> A2: In a few paragraphs, describe your code for locating the frame,
@@ -86,7 +85,9 @@ If kpage is not null, then a valid frame is present. This frame can be obtained 
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
-
+Accessed and dirty bits are used only during the eviction process. Whenever a frame is selected for eviction, I check its dirty bit and if it is set, I will just swap it out of the memory.
+Whenever that same page comes back into the memory from the swap space, I again mark it as dirty.
+Since I am using FIFO page replacement algorithm, it does not need to keep track of the accessed and dirty bits of frames once they are out of memory. Hence, I am not storing it anywhere.
 
 
 ---- SYNCHRONIZATION ----
@@ -173,7 +174,11 @@ Else, exit the thread.
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
-
+The locks which I have used are in such a way that they are at the entry point of each part of the Virtual Memory code.
+If a process is executing something in swap area, or if it executing the filesys code, it takes a lock just before entering that region and releases the lock as soon as it finishes.
+Also, there is no overlap of regions of code which was mentioned above.
+This means that there can never be circular wait between the processes.
+This is one of the requirements of deadlock. Since this condition is never satisfied, I can be sure that deadlocks can never happen.
 
 
 >> B6: A page fault in process P can cause another process Q's frame
@@ -181,18 +186,33 @@ Else, exit the thread.
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
-
+I am using a lock called FRAME which is acquired by the current process just before accessing the frame table. It will not be released until it gets a frame from the memory. In between, if a context switch happens, then the other process can continue to execute till it causes a page fault.
+At this time, it will want to access the frame table by taking the frame lock. This would stop it from accessing it and hence this will make sure that proper synchronization is ensured between the two processes
 
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
 >> still being read in?
 
+As explained earlier, access to a frame is allowed only after FRAME lock is acquired by the process.
+If process Q comes to execute the eviction code, then it needs to first acquire the FRAME lock. This will make it wait for the process P to finish its execution.
+By doing this, the above condition can never occur.
+
+
 >> B8: Explain how you handle access to paged-out pages that occur
 >> during system calls.  Do you use page faults to bring in pages (as
 >> in user programs), or do you have a mechanism for "locking" frames
 >> into physical memory, or do you use some other design?  How do you
 >> gracefully handle attempted accesses to invalid virtual addresses?
+
+Page faults during system calls are handled as normal page faults. But in this kind of page faults, the faulting address will be in user virtual memory but the page fault will be in the kernel context.
+Once a kernel context page fault occurs, the stack frame sent to the page_fault will not correspond to the user stack frame which was sent to the system call handler.
+I handle this by keeping another pointer in the thread structure of the executing process.
+Once the process executes a system call, I will store this pointer in the esp member of the thread structure. If the page fault occurs in the kernel context, then I will be using the stack pointer saved in the thread structure.
+These page faults are then handled in the usual way any page faults are handled.
+They are checked if any entry in the supplymentary page table exists for the virtual address. If so, then they are brought into the memory from the file system or from the swap space.
+If not, it means that the faulting address is an invalid virtual address. The process is exited after this with a exit code of -1.
+
 
 ---- RATIONALE ----
 
