@@ -166,13 +166,17 @@ bool grow_stack ( void *addr )
 	void *upage = pg_round_down(addr) ;
 
 	struct page *page = page_lookup(upage) ;
-	if ( page->swap != NULL )
+	if ( page != NULL )
 	{
-		/*printf ( "loading swap slot\n");*/
-		load_swap_slot(page,thread_current());
-		return true ;
+		if ( page->swap != NULL )
+		{
+			/*printf ( "Loading stack in swap\n");*/
+			load_swap_slot(page,thread_current());
+			return true ;
+		}
 	}
 
+	/*printf ( "Not null\n");*/
 	lock_acquire(&frame) ;
 	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;

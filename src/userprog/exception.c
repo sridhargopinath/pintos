@@ -151,11 +151,12 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
   
- /*printf ("Page fault at %p: %s error %s page in %s context.\n",*/
+  /*printf ("Page fault at %p: %s error %s page in %s context. by thread %s\n",*/
 		  /*fault_addr,*/
 		  /*not_present ? "not present" : "rights violation",*/
 		  /*write ? "writing" : "reading",*/
-		  /*user ? "user" : "kernel");*/
+		  /*user ? "user" : "kernel",*/
+		  /*thread_current()->name);*/
 
   if ( not_present == false )
   {

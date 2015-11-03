@@ -310,10 +310,11 @@ bool remove ( const char *file )
 // Opens an already existing file
 int open ( const char *file )
 {
-	/*printf ( "Inside open\n" ) ;*/
+	/*printf ( "Inside open %s\n", file ) ;*/
 	// Check the validity of the address of the file and also the filename
 	check_file ( (uint8_t *)file ) ;
 
+	/*printf ( "after check file \n");*/
 	lock_acquire ( &file_lock) ;
 
 	bool check ;
@@ -420,7 +421,7 @@ int write ( int fd, void *buffer, unsigned size )
 	if ( fd == 0 )
 		return 0 ;
 
-	/*printf ("reached 1\n");*/
+	/*printf ( "Inside write\n") ;*/
 	// Check if the buffer is valid or not upto size bytes
 	check_buffer ( (uint8_t *)buffer, size ) ;
 	/*printf ("reached 2\n");*/
@@ -442,6 +443,7 @@ int write ( int fd, void *buffer, unsigned size )
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
+	/*printf ( "Finish write\n");*/
 	return wrote ;
 }
 
@@ -498,6 +500,7 @@ void close ( int fd )
 	list_remove ( &f->elem) ;
 	free(f) ;
 
+	/*printf ( "finish close\n");*/
 	return ;
 }
 
@@ -599,7 +602,6 @@ void munmap ( mapid_t mapping )
 	struct map_info *map = get_map_info ( mapping ) ;
 	if ( map == NULL )
 		return ;
-
 
 	/*printf ( "FD is %d\n", map->fd);*/
 	/*if ( map->file != get_file_info(map->fd)->file )*/
@@ -714,7 +716,10 @@ void check_buffer ( const uint8_t *addr, int size )
 	{
 		tmp = get_user(addr + i);
 		if(tmp == -1)
+		/*{*/
+			/*printf ( "Exit %d\n", i) ;*/
 			exit (-1);
+		/*}*/
 	}
 	return ;
 }
@@ -723,7 +728,7 @@ void check_buffer ( const uint8_t *addr, int size )
 // If not, exit
 void check_file ( const uint8_t *addr )
 {
-	check_buffer ( addr, 14 ) ;
+	check_buffer ( addr, strlen((char*)addr)+1) ;
 	return ;
 }
 
