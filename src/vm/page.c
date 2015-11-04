@@ -98,8 +98,9 @@ bool get_page( void *addr )
 	// Page is in swap space
 	if ( p->swap != NULL )
 	{
-		/*printf ( "loading swap slot\n");*/
+		lock_acquire(&frame) ;
 		load_swap_slot(p,thread_current());
+		lock_release(&frame) ;
 		return true ;
 	}
 
@@ -170,7 +171,9 @@ bool grow_stack ( void *addr )
 		if ( page->swap != NULL )
 		{
 			/*printf ( "Loading stack in swap\n");*/
+			lock_acquire(&frame);
 			load_swap_slot(page,thread_current());
+			lock_release(&frame);
 			return true ;
 		}
 	}

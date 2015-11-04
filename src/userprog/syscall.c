@@ -196,7 +196,9 @@ void exit ( int status )
 		/*free(f) ;*/
 	}
 
+	lock_acquire(&frame);
 	invalidate_swap_slots(cur) ;
+	lock_release(&frame);
 
 	// Free the Supplymentary hash table
 	if ( hash_size(&cur->pages) != 0 )
@@ -622,7 +624,9 @@ void munmap ( mapid_t mapping )
 
 		if ( p->swap != NULL )
 		{
+			lock_acquire(&frame);
 			load_swap_slot(p,cur);
+			lock_release(&frame);
 		}
 
 		void *upage = p->addr ;

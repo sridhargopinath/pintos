@@ -75,9 +75,8 @@ void swap_page ( struct page *p, struct thread *t )
 
 void load_swap_slot(struct page *p, struct thread *t)
 {
-	lock_acquire(&frame);
+
 	struct frame *f = frame_allocate() ;
-	lock_release(&frame);
 
 	struct swap_slot *slot = p->swap ;
 
