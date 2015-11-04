@@ -20,8 +20,11 @@
 
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+
+#ifdef VM
 #include "vm/page.h"
 #include "vm/frame.h"
+#endif
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -155,17 +158,7 @@ start_process (void *arguments_)
   // EXIT the thread if the memory allocation fails
   char *file_name = (char *) malloc ( sizeof(char) * (strlen((char*)arguments)+1)) ;
   if ( file_name == NULL )
-  {
-	  palloc_free_page (arguments_);
-	  if ( cur->parent != NULL )
-	  {
-		  lock_acquire(&exec_lock) ;
-		  cur->info->status = PROCESS_ERROR ;
-		  cond_signal ( &exec_cond, &exec_lock ) ;
-		  lock_release(&exec_lock) ;
-	  }
-	  exit(-1) ;
-  }
+  	PANIC("start_process: Not able to allocate memory to file_name");
 
   // Copy the arguments
   strlcpy(file_name, arguments, strlen((char*)arguments)+1) ;
@@ -181,22 +174,6 @@ start_process (void *arguments_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-
-  // Initialize the supplymentary hash table
-  /*success = page_init(&cur->pages) ;*/
-  /*if ( !success )*/
-  /*{*/
-	  /*palloc_free_page (arguments_);*/
-	  /*if ( cur->parent != NULL )*/
-	  /*{*/
-		  /*lock_acquire(&exec_lock) ;*/
-		  /*cur->info->status = PROCESS_ERROR ;*/
-		  /*cond_signal ( &exec_cond, &exec_lock ) ;*/
-		  /*lock_release(&exec_lock) ;*/
-	  /*}*/
-	  /*free(file_name) ;*/
-	  /*exit(-1) ;*/
-  /*}*/
 
   // Try loading the executable
   lock_acquire ( &file_lock ) ;
@@ -241,7 +218,6 @@ start_process (void *arguments_)
 	  lock_release(&exec_lock) ;
   }
 
-  /*printf ( "Load success\n");*/
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -522,8 +498,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   // Save the FILE * of the executable to implement DENY WRITE
   t->executable = file ;
-  /*printf ( "Size of the hash table is %d\n", hash_size(&t->pages) ) ;*/
-
   if ( success )
 	  file_deny_write ( file ) ;
   
@@ -603,7 +577,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  /*file_seek (file, ofs);*/
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -612,7 +585,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+	  // Allocate a new supplymentary page table entry for the segment
+	  // Keep all the data regarding the segment which is required when loading from the executable
 	  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+	  if ( p == NULL )
+	  	PANIC("load_segment: Not able to allocate memory to page");
+	  
+	  // Store all the data required
 	  p->file = file ;
 	  p->addr = upage ;
 	  p->ofs = ofs ;
@@ -624,32 +603,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 	  p->swap = NULL ;
 
-
+	  // Insert into the supplymentary page table
 	  page_insert ( &cur->pages, &p->hash_elem ) ;
 
-	  ofs += page_read_bytes ;
-
-      /*[> Get a page of memory. <]*/
-      /*uint8_t *kpage = palloc_get_page (PAL_USER);*/
-      /*if (kpage == NULL)*/
-        /*return false;*/
-
-      /*[> Load this page. <]*/
-      /*if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)*/
-        /*{*/
-          /*palloc_free_page (kpage);*/
-          /*return false; */
-        /*}*/
-      /*memset (kpage + page_read_bytes, 0, page_zero_bytes);*/
-
-      /*[> Add the page to the process's address space. <]*/
-      /*if (!install_page (upage, kpage, writable)) */
-        /*{*/
-          /*palloc_free_page (kpage);*/
-          /*return false; */
-        /*}*/
-
       /* Advance. */
+      ofs += page_read_bytes ;
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
@@ -665,45 +623,45 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  /*kpage = palloc_get_page (PAL_USER | PAL_ZERO);*/
+  // Allocate the first stack frame. This is not done lazily
   lock_acquire(&frame) ;
   struct frame *f = frame_allocate() ;
   lock_release(&frame) ;
 
+  // Set the whole page to ZERO
   kpage = f->kpage ;
+  memset(kpage, 0, PGSIZE) ;
 
-  if (kpage != NULL) 
+  // Install the page to the page directory with writable as TRUE
+  success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+  if (success)
   {
-	  memset(kpage, 0, PGSIZE) ;
-	  success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-	  if (success)
-	  {
-		  *esp = PHYS_BASE;
+	  *esp = PHYS_BASE;
 
-		  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
-		  p->file = NULL ;
-		  p->addr = ((uint8_t *) PHYS_BASE) - PGSIZE ;
-		  p->kpage = kpage ;
-		  p->ofs = -1 ;
-		  p->read_bytes = -1 ;
-		  p->writable = true ;
-		  p->stack = true ;
+	  // Create a new page table entry and store all the data
+	  struct page *p = (struct page *) malloc ( sizeof(struct page) ) ;
+	  if ( p == NULL )
+	  	PANIC("setup stack: Failed to allocate memory to page structure\n");
 
-		  p->swap = NULL ;
+	  p->file = NULL ;
+	  p->addr = ((uint8_t *) PHYS_BASE) - PGSIZE ;
+	  p->kpage = kpage ;
+	  p->ofs = -1 ;
+	  p->read_bytes = -1 ;
+	  p->writable = true ;
+	  p->stack = true ;
 
-		  f->p = p ;
+	  p->swap = NULL ;
 
-		  page_insert ( &thread_current()->pages, &p->hash_elem ) ;
-	  }
-	  else
-	  {
-		  /*palloc_free_page (kpage);*/
-		  lock_acquire(&frame) ;
-		  frame_deallocate(kpage) ;
-		  lock_release(&frame) ;
-	  }
+	  f->p = p ;
+
+	  // Insert the page into the hash table
+	  page_insert ( &thread_current()->pages, &p->hash_elem ) ;
   }
-  return success;
+  else
+  	  PANIC("setup stack: install page returned -1");
+  
+  return true ;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

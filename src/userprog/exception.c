@@ -172,7 +172,9 @@ page_fault (struct intr_frame *f)
 		f->eax = 0xffffffff;
 		exit(-1) ;
 	}
-
+	
+	// IMPORTANT: Absolute limit on the size of the stack. This is 8MB
+	// If the stack access is below 8MB from PHYSBASE, then it is an invalid access. Exit the thread
 	if ( stackPtr < PHYS_BASE - 0x00800000 )
 	{
 		f->eip = (void (*) (void)) f->eax;
@@ -181,26 +183,16 @@ page_fault (struct intr_frame *f)
 	}
 
 	bool success ;
+	// If the fault address is within (stackPointer - 32Bytes), then it means that it is a valid stack access
+	// This should he handled by growing the stack by allocating a new page at the faulting address
+	// ELSE, try to get that particular page from the by looking up supplymentary page table
 	if ( fault_addr >= stackPtr - 32 )
-	{
-		/*printf ( "Stack Growth\n" ) ;*/
 		success = grow_stack(fault_addr) ;
-	}
 	else
-	{
-		/*printf ( "Get page\n" ) ;*/
 		success = get_page(fault_addr) ;
-	}
+
 	if ( !success )
 		exit(-1) ;
-
-	// Get the faulting address and check if it is a valid address
-
-	// These details are provided in the PINTOS documentation
-	/*f->eip = (void (*) (void)) f->eax;*/
-	/*f->eax = 0xffffffff;*/
-
-	// Exit the current thread if the page fault occurs
 
 	/* To implement virtual memory, delete the rest of the function
 	   body, and replace it with code that brings in the page to
@@ -213,4 +205,3 @@ page_fault (struct intr_frame *f)
 	/*user ? "user" : "kernel");*/
 	/*kill (f);*/
 }
-

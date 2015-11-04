@@ -14,17 +14,15 @@
 #include "userprog/process.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
+
+#ifdef VM
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
+#endif
 
 // Typedef used for process IDs
 typedef int pid_t ;
-
-// Typedef for Memory Mapping
-typedef int mapid_t ;
-
-/*static void *esp ;*/
 
 // This structure is used to keep track of all the files opened by a particular thread
 struct file_info
@@ -34,6 +32,10 @@ struct file_info
 	struct list_elem elem ;
 } ;
 
+// Typedef for Memory Mapping
+typedef int mapid_t ;
+
+// Structure to keep track the list of all the pages used by a particular MMAP
 struct mmap_page
 {
 	struct list_elem elem ;
@@ -45,9 +47,9 @@ struct map_info
 {
 	mapid_t mapid ;
 	int fd ;
-	struct file *file ;
-	struct list_elem elem ;
-	struct list pages ;
+	struct file *file ;				// File pointer of the file mapped by this mmap
+	struct list_elem elem ;			// List element of the list of all the mmaps present in thread structure
+	struct list pages ;				// List of all the pages used by this mmap
 } ;
 
 // Lock for assigning unique File Descriptors upon opening each file
@@ -135,11 +137,11 @@ void exit ( int status )
 {
 	struct thread *cur = thread_current() ;
 
+	// If the thread exited while holding the thread lock, release it
 	if ( lock_held_by_current_thread(&file_lock) )
 		lock_release(&file_lock) ;
 
 	printf ( "%s: exit(%d)\n", cur->name, status ) ;
-
 
 	// Clear the process info objects of all the children and free the memory
 	struct list_elem *e ;
@@ -156,27 +158,14 @@ void exit ( int status )
 		free(p) ;
 	}
 
-	/*printf ( "Reached 1\n");*/
-
-	/*printf ( "Size of mmaps in EXIT is %d\n", list_size(&cur->mmaps)) ;*/
-	// Clear the map_info objects
+	// Unmap all the memory mapped files
 	for ( e = list_begin(&cur->mmaps) ; e != list_end(&cur->mmaps) ; )
 	{
 		struct map_info *m = list_entry ( e, struct map_info, elem ) ;
 		e = list_next(e) ;
 
 		munmap(m->mapid) ;
-		/*file_close(f->file) ;*/
-		/*list_remove(&f->elem) ;*/
-
-		/*free(f) ;*/
 	}
-
-	/*printf ( "Reached 2\n");*/
-	// Deallocated the pages allocated for this thread
-
-	/*printf ( "Size of page table hash is %d\n",hash_size(&cur->pages));*/
-	/*printf ( "Size of frame table hash is %d\n",hash_size(&frames));*/
 
 	// Clear the file_info objects
 	for ( e = list_begin(&cur->files) ; e != list_end(&cur->files) ; )
@@ -185,17 +174,9 @@ void exit ( int status )
 		e = list_next(e) ;
 
 		close(f->fd);
-		/*if ( get_map_info_FD(f->fd) == NULL )*/
-		/*{*/
-		/*lock_acquire(&file_lock);*/
-		/*file_close(f->file) ;*/
-		/*lock_release(&file_lock);*/
-		/*}*/
-
-		/*list_remove(&f->elem) ;*/
-		/*free(f) ;*/
 	}
 
+	// If any pages of current thread is in the swap slot, remove them
 	lock_acquire(&frame);
 	invalidate_swap_slots(cur) ;
 	lock_release(&frame);
