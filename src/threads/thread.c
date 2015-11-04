@@ -20,6 +20,9 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "filesys/file.h"
+#endif
+
+#ifdef VM
 #include "vm/page.h"
 #endif
 
@@ -370,12 +373,15 @@ thread_create (const char *name, int priority,
   t->parent = cur ;
   list_init(&t->children) ;
 
-  // Initialize the lists used by this thread
+  // Initialize the list of the open files
   list_init(&t->files) ;
+  
+  #endif
+  
+  #ifdef VM
+  // Initialize the memory map list and also the Hash of supplymentary page table
   list_init(&t->mmaps) ;
-
   hash_init(&t->pages, page_hash, page_less, NULL ) ;
-
   #endif
 
   // Set the NICE and RECENT_CPU value for the thread

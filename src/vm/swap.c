@@ -69,7 +69,6 @@ void swap_page ( struct page *p, struct thread *t )
 
 	pagedir_clear_page(t->pagedir,p->addr);
 
-	/*printf ( "EXIT swap page\n");*/
 	return ;
 }
 

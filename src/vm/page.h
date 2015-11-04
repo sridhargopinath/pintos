@@ -10,17 +10,17 @@
 struct page
 {
 	struct hash_elem hash_elem ;		/* Hash table element. */
-	struct file *file ;
+	struct file *file ;					/* File pointer of the file which occupies this page */
 
 	void *addr ;						/* Virtual address. */
 	void *kpage ;						/* Physical address */
 	int32_t ofs ;						/* Offset within the executable */
-	size_t read_bytes ;				/* Size of bytes to be read */
-	bool writable ;					/* Writable or Read-Only */
+	size_t read_bytes ;					/* Size of bytes to be read */
+	bool writable ;						/* Writable or Read-Only */
 
-	bool stack ;
+	bool stack ;						/* Is this a stack page? */
 
-	struct swap_slot *swap ;
+	struct swap_slot *swap ;			/* If present in Swap, the pointer to swap slot. Else NULL */
 } ;
 
 // Initialize the supplymentary hash table
@@ -38,9 +38,6 @@ struct page * page_lookup (void *address) ;
 // Insert an element into the supplymentary hash table
 struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new ) ;
 
-// Allocate a frame to the faluting address
-//bool page_allocate ( void *addr ) ;
-
 // Load the page from the executable containing the virtual address ADDR
 bool get_page ( void *addr ) ;
 
@@ -49,7 +46,5 @@ bool grow_stack(void *addr) ;
 
 // Remove the entry from the supplymentary page table
 void page_deallocate ( struct hash_elem *h, void *aux ) ;
-
-void printPageTable (void) ;
 
 #endif

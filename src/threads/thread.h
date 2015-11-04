@@ -129,10 +129,11 @@ struct thread
 	struct file *executable ;			// Executable file of the current process (thread)
 
 	struct hash pages ;					// Supplementary page table
+#endif
 
-	uint32_t esp ;							// Saving the stack pointer
-
-	struct list mmaps ;
+#ifdef VM
+	uint32_t esp ;						// Saving the stack pointer
+	struct list mmaps ;					// List of the memory maps by this thread
 #endif
 
     /* Owned by thread.c. */

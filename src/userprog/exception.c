@@ -151,39 +151,21 @@ page_fault (struct intr_frame *f)
 	/*write = (f->error_code & PF_W) != 0;*/
 	user = (f->error_code & PF_U) != 0;
 
-	/*printf ("Page fault at %p: %s error %s page in %s context. by thread %s\n",*/
-	/*fault_addr,*/
-	/*not_present ? "not present" : "rights violation",*/
-	/*write ? "writing" : "reading",*/
-	/*user ? "user" : "kernel",*/
-	/*thread_current()->name);*/
-
+	// If it is a rights violation error, Exit the thread
+	// NOTE: rights violation error never happens
 	if ( not_present == false )
-	{
-		/*printf ( "Rights violation error. EXITING\n"); */
 		exit(-1);
-	}
 
 	void *stackPtr ;
+	// If user context, then the stack pointer is got by using the stack frame sent to page_fault
+	// Else if kernel context (inside system call), then stack pointer is saved in the thread structure as soon as system call handler is invoked
 	if ( user == true )
-	{
-		/*printf ("User fault\n");*/
-		/*printf ( "Pointer: %p\n", f->esp);*/
-		/*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
 		stackPtr = f->esp ;
-	}
 	else
-	{
-		/*printf ( "Kernel fault\n");*/
-		/*printf ( "Pointer: %p\n", f->esp);*/
-		/*printf ( "thread Pointer: %p\n", thread_current()->esp);*/
 		stackPtr = (void*)thread_current()->esp ;
-	}
 
-	/*printf ( "Faulting address is %p by thread %s\n", fault_addr, thread_current()->name ) ;*/
-	/*printf ( "Size of hash is %d\n", hash_size(&thread_current()->pages) ) ;*/
-
-	/*printf ( "fault_addr: %p esp: %p by %s\n", fault_addr, thread_current()->esp, thread_current()->name ) ;*/
+	// If faulted in kernel address space, exit the kernel like we used to do in USERPROG.
+	// The eip and eax registers were set in Project-2. I continue to do this even here. Check if required TODO
 	if ( !is_user_vaddr(fault_addr) )
 	{
 		f->eip = (void (*) (void)) f->eax;
@@ -193,7 +175,6 @@ page_fault (struct intr_frame *f)
 
 	if ( stackPtr < PHYS_BASE - 0x00800000 )
 	{
-		/*printf ( "Not a valid esp\n" ) ;*/
 		f->eip = (void (*) (void)) f->eax;
 		f->eax = 0xffffffff;
 		exit(-1) ;

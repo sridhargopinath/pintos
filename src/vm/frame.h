@@ -10,6 +10,7 @@ struct hash frames ;
 // Lock to access the frame table
 struct lock frame ;
 
+// List of all the frames present in the user pool
 struct list frame_list ;
 
 // Frame table entry
@@ -44,6 +45,7 @@ struct frame * frame_allocate (void) ;
 // Deallocate the frame and update in the frame table
 void frame_deallocate (void *kpage) ;
 
+// Evict a frame using FIFO replacement algorithm and return a free frame
 struct frame * evict_frame (void) ;
 
 #endif

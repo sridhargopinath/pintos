@@ -37,6 +37,7 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
+
 #ifdef VM
 #include "vm/frame.h"
 #include "vm/swap.h"
@@ -290,9 +291,11 @@ run_task (char **argv)
   printf ("Executing '%s':\n", task);
 #ifdef USERPROG
 
-  // Initialize the frame table
+#ifdef VM
+  // Initialize the frame table and the swap space
   frame_init() ;
   swap_init() ;
+#endif
 
   process_wait (process_execute (task));
 #else

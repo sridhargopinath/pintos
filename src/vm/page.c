@@ -72,24 +72,13 @@ static bool install_page (void *upage, void *kpage, bool writable)
 // Return FALSE if it is a bad address
 bool get_page( void *addr )
 {
-	/*printf ( "Inside get_page\n");*/
-	/*printf ( "Page allocate address: %p\n", addr ) ;*/
-	/*printf ( "Entered page_allocate of %s\n", thread_current()->name) ;*/
-	/*struct thread *cur = thread_current() ;*/
-
 	// Get the page number with the offset set to 0
 	void *upage = pg_round_down(addr) ;
-	/*printf ( "UPAGE is %p\n", upage ) ;*/
 
 	// Find in the supplymentary page table
-	/*printf ( "before lookup\n");*/
-	/*printPageTable();*/
 	struct page *p = page_lookup ( upage ) ;
-	/*printf ( "After lookup\n");*/
 	if ( p == NULL )
 	{
-		/*PANIC("Request for a page not present in the supplymentary page table\n") ;*/
-		/*printf ( "Return false\n");*/
 		return false ;
 	}
 
@@ -105,12 +94,10 @@ bool get_page( void *addr )
 	}
 
 	/* Get a page of memory. */
-	/*uint8_t *kpage = palloc_get_page (PAL_USER);*/
 	lock_acquire(&frame) ;
 	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;
 
-	/*printf ( "Return from frame_allocate\n");*/
 	f->p = p ;
 	void *kpage = f->kpage ;
 
@@ -119,16 +106,12 @@ bool get_page( void *addr )
 		printf ( "NO MORE FRAMES. Palloc failed\n" ) ;
 		return false;
 	}
-	/*printf ( "Address of the kernel page allocated: %p\n", kpage ) ;*/
 
 	p->kpage = kpage ;
 
 	file_seek(p->file, p->ofs) ;
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
 
-	/*printf ( "file read of %s\n", thread_current()->name) ;*/
-	/*printf ( "File size is %u and read bytes is %d\n", file_length(p->file),p->read_bytes);*/
-	/*printf ( "Addr in file * is %p\n addr of addr %p\n offset is %u\nRead bytes is %d\nwritable is %d\n", p->file, p->addr, p->ofs, p->read_bytes, p->writable);*/
 	/* Load this page. */
 
 	lock_acquire(&file_lock);
@@ -137,8 +120,6 @@ bool get_page( void *addr )
 	file_seek(p->file,old_ofs);
 	lock_release(&file_lock);
 
-
-	/*printf ( "output from file read is %u\n", read) ;*/
 	if (read != (int) p->read_bytes)
 	{
 		printf ( "FILE READ FAILED\n" ) ;
@@ -147,7 +128,6 @@ bool get_page( void *addr )
 	}
 	memset (kpage + p->read_bytes, 0, zero_bytes);
 
-	/*printf ( "install page: WRITABLE is %d\n", p->writable ) ;*/
 	/* Add the page to the process's address space. */
 	if (!install_page (p->addr, kpage, p->writable))
 	{
@@ -155,14 +135,12 @@ bool get_page( void *addr )
 		return false;
 	}
 	p->kpage = kpage ;
-	/*printf ( "Kpage address is %p\n", p->kpage) ;*/
 
 	return true ;
 }
 
 bool grow_stack ( void *addr )
 {
-	/*printf ( "stack growth at %p\n", addr ) ;*/
 	void *upage = pg_round_down(addr) ;
 
 	struct page *page = page_lookup(upage) ;
@@ -170,7 +148,6 @@ bool grow_stack ( void *addr )
 	{
 		if ( page->swap != NULL )
 		{
-			/*printf ( "Loading stack in swap\n");*/
 			lock_acquire(&frame);
 			load_swap_slot(page,thread_current());
 			lock_release(&frame);
@@ -210,11 +187,8 @@ bool grow_stack ( void *addr )
 // Remove the page from the supplymentary page table
 // IMPORTANT: This is called only inside EXIT when the process is exiting
 // This function shouldn't be called explicitely
-/*void page_deallocate ( void *upage)*/
 void page_deallocate ( struct hash_elem *e, void *aux)
 {
-	/*printf ( "Inside page page_deallocate\n");*/
-	/*struct page *p = page_lookup(upage) ;*/
 	struct page *p = hash_entry ( e, struct page, hash_elem) ;
 	if ( p == NULL )
 	{
@@ -225,13 +199,10 @@ void page_deallocate ( struct hash_elem *e, void *aux)
 	void *kpage = p->kpage ;
 	if ( kpage == NULL )
 	{
-		/*PANIC("Deallocation page which has kpage == NULL\n");*/
 		if ( (int)aux != 1 )
 			free(p) ;
 		return ;
 	}
-
-	/*printf ( "Frame deallocate: uaddr: %p kpage: %p\n", p->addr, p->kpage) ;*/
 
 	lock_acquire(&frame);
 	frame_deallocate(kpage) ;
@@ -239,29 +210,10 @@ void page_deallocate ( struct hash_elem *e, void *aux)
 
 	/*hash_delete (&thread_current()->pages,&p->hash_elem) ;*/
 
-	/*printf ( "Before free in deallocate\n") ;*/
-	/*printPageTable();*/
-
 	pagedir_clear_page(thread_current()->pagedir, p->addr) ;
 
 	if ( (int)aux != 1 )
 		free(p) ;
 
-	/*printf ( "after free in deallocate\n") ;*/
-	/*printPageTable();*/
-	return ;
-}
-
-void printPageTable(void)
-{
-	struct hash_iterator i;
-
-	hash_first (&i, &thread_current()->pages);
-	while (hash_next (&i))
-	{
-		struct page *p = hash_entry (hash_cur(&i), struct page, hash_elem);
-		/*struct foo *f = hash_entry (hash_cur (&i), struct foo, elem);*/
-		printf ( "Upage: %p kpage: %p\n", p->addr, p->kpage) ;
-	}
 	return ;
 }
