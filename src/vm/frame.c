@@ -18,44 +18,44 @@ void frame_init ()
 
 	return ;
 }
-	
+
 /* Returns a hash value for frame p. */
 unsigned frame_hash (const struct hash_elem *p_, void *aux UNUSED)
 {
-  const struct frame *p = hash_entry (p_, struct frame, hash_elem);
-  return hash_bytes (&p->kpage, sizeof p->kpage);
+	const struct frame *p = hash_entry (p_, struct frame, hash_elem);
+	return hash_bytes (&p->kpage, sizeof p->kpage);
 }
 
 /* Returns true if frame a precedes frame b. */
 bool frame_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED)
 {
-  const struct frame *a = hash_entry (a_, struct frame, hash_elem);
-  const struct frame *b = hash_entry (b_, struct frame, hash_elem);
+	const struct frame *a = hash_entry (a_, struct frame, hash_elem);
+	const struct frame *b = hash_entry (b_, struct frame, hash_elem);
 
-  return a->kpage < b->kpage;
+	return a->kpage < b->kpage;
 }
 
 /* Returns the frame containing the given physical address,
    or a null pointer if no such frame exists. */
 struct frame * frame_lookup (void *address)
 {
-  struct frame p;
-  struct hash_elem *e;
+	struct frame p;
+	struct hash_elem *e;
 
-  p.kpage = address;
+	p.kpage = address;
 
-  /*lock_acquire(&frame) ;*/
-  e = hash_find (&frames, &p.hash_elem);
-  /*lock_release(&frame) ;*/
+	/*lock_acquire(&frame) ;*/
+	e = hash_find (&frames, &p.hash_elem);
+	/*lock_release(&frame) ;*/
 
-  return e != NULL ? hash_entry (e, struct frame, hash_elem) : NULL;
+	return e != NULL ? hash_entry (e, struct frame, hash_elem) : NULL;
 }
 
 // Insert an element into the frame table
 struct hash_elem * frame_insert ( struct hash_elem *new )
 {
 	struct hash_elem *e ;
-	
+
 	/*lock_acquire(&frame);*/
 	e = hash_insert (&frames, new);
 	/*lock_release(&frame);*/
@@ -128,7 +128,7 @@ struct frame * evict_frame()
 	/*struct hash_iterator i;*/
 	/*hash_first(&i,h);*/
 	/*for ( x = 0 ; x < victim ; x ++ )*/
-		/*hash_next(&i);*/
+	/*hash_next(&i);*/
 	/*victim++ ;*/
 
 	/*struct frame *f = hash_entry(hash_cur(&i),struct frame, hash_elem);*/

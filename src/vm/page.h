@@ -9,18 +9,18 @@
 // Supplymentary page table
 struct page
 {
-  struct hash_elem hash_elem ;		/* Hash table element. */
-  struct file *file ;
+	struct hash_elem hash_elem ;		/* Hash table element. */
+	struct file *file ;
 
-  void *addr ;						/* Virtual address. */
-  void *kpage ;						/* Physical address */
-  int32_t ofs ;						/* Offset within the executable */
-  size_t read_bytes ;				/* Size of bytes to be read */
-  bool writable ;					/* Writable or Read-Only */
+	void *addr ;						/* Virtual address. */
+	void *kpage ;						/* Physical address */
+	int32_t ofs ;						/* Offset within the executable */
+	size_t read_bytes ;				/* Size of bytes to be read */
+	bool writable ;					/* Writable or Read-Only */
 
-  bool stack ;
+	bool stack ;
 
-  struct swap_slot *swap ;
+	struct swap_slot *swap ;
 } ;
 
 // Initialize the supplymentary hash table

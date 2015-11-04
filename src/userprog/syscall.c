@@ -187,9 +187,9 @@ void exit ( int status )
 		close(f->fd);
 		/*if ( get_map_info_FD(f->fd) == NULL )*/
 		/*{*/
-			/*lock_acquire(&file_lock);*/
-			/*file_close(f->file) ;*/
-			/*lock_release(&file_lock);*/
+		/*lock_acquire(&file_lock);*/
+		/*file_close(f->file) ;*/
+		/*lock_release(&file_lock);*/
 		/*}*/
 
 		/*list_remove(&f->elem) ;*/
@@ -438,7 +438,7 @@ int write ( int fd, void *buffer, unsigned size )
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return 0 ;
-	
+
 	lock_acquire ( &file_lock ) ;
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
@@ -494,7 +494,7 @@ void close ( int fd )
 		lock_release ( &file_lock ) ;
 	}
 	/*else*/
-		/*printf ("mmap not null\n");*/
+	/*printf ("mmap not null\n");*/
 
 
 	list_remove ( &f->elem) ;
@@ -605,7 +605,7 @@ void munmap ( mapid_t mapping )
 
 	/*printf ( "FD is %d\n", map->fd);*/
 	/*if ( map->file != get_file_info(map->fd)->file )*/
-		/*printf ( "FDs are not equal\n");*/
+	/*printf ( "FDs are not equal\n");*/
 
 	off_t old_ofs = tell(map->fd) ;
 	/*printf ( "Old ofs is %u\n", old_ofs);*/
@@ -637,15 +637,15 @@ void munmap ( mapid_t mapping )
 			write(map->fd, upage, p->read_bytes) ;
 			/*printf ( "Write\n");*/
 			/*if ( written == p->read_bytes )*/
-				/*printf ( "Wrote successfully\n");*/
+			/*printf ( "Wrote successfully\n");*/
 			/*else*/
-				/*printf ( "Write failed: %u and %u\n", written, p->read_bytes);*/
+			/*printf ( "Write failed: %u and %u\n", written, p->read_bytes);*/
 			/*lock_acquire(&file_lock);*/
 			/*file_seek(p->file, p->ofs) ;*/
 			/*file_write(p->file, upage, p->read_bytes);*/
 			/*lock_release(&file_lock);*/
 		}
-		
+
 		/*printf ( "before deallocate::\n");*/
 		/*printPageTable();*/
 		page_deallocate(h, (void*)1) ;
@@ -716,7 +716,7 @@ void check_buffer ( const uint8_t *addr, int size )
 	{
 		tmp = get_user(addr + i);
 		if(tmp == -1)
-		/*{*/
+			/*{*/
 			/*printf ( "Exit %d\n", i) ;*/
 			exit (-1);
 		/*}*/

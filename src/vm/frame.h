@@ -15,11 +15,11 @@ struct list frame_list ;
 // Frame table entry
 struct frame
 {
-  struct hash_elem hash_elem ;
-  void *kpage ;
-  struct page *p ;
-  struct thread *t ;
-  struct list_elem elem ;
+	struct hash_elem hash_elem ;
+	void *kpage ;
+	struct page *p ;
+	struct thread *t ;
+	struct list_elem elem ;
 } ;
 
 // Initialize the frame table and the lock to synchronize the access to frame table

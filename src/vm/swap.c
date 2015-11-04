@@ -24,7 +24,7 @@ struct block *block ;
 void swap_init(void)
 {
 	block = block_get_role(BLOCK_SWAP);
-	
+
 	list_init(&swap_slots) ;
 
 	block_sector_t size = block_size(block) ;
@@ -49,7 +49,7 @@ void swap_page ( struct page *p, struct thread *t )
 	if ( slot == NULL )
 		PANIC("Couldn't allocate memory for swap_slot\n");
 	slot->p = p ;
-	
+
 	size_t pos = bitmap_scan_and_flip(bitmap,0,PGSIZE/BLOCK_SECTOR_SIZE,false);
 	if ( pos == BITMAP_ERROR )
 		PANIC ( "Not able to get a swap slot from bitmap\n");
