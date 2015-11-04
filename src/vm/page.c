@@ -111,7 +111,6 @@ bool get_page( void *addr )
 
 	/*printf ( "Return from frame_allocate\n");*/
 	f->p = p ;
-	f->t = thread_current();
 	void *kpage = f->kpage ;
 
 	if (kpage == NULL)

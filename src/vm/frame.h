@@ -16,6 +16,7 @@ struct list frame_list ;
 struct frame
 {
 	struct hash_elem hash_elem ;
+	
 	void *kpage ;
 	struct page *p ;
 	struct thread *t ;

@@ -9,6 +9,8 @@
 #include "userprog/pagedir.h"
 #include "vm/swap.h"
 
+// IMPORTANT: Functions in this file are always invoked by holding the FRAME lock
+
 // Initialize the frame table and the lock to synchronize the access to frame table
 void frame_init ()
 {
@@ -43,10 +45,7 @@ struct frame * frame_lookup (void *address)
 	struct hash_elem *e;
 
 	p.kpage = address;
-
-	/*lock_acquire(&frame) ;*/
 	e = hash_find (&frames, &p.hash_elem);
-	/*lock_release(&frame) ;*/
 
 	return e != NULL ? hash_entry (e, struct frame, hash_elem) : NULL;
 }
@@ -56,41 +55,38 @@ struct hash_elem * frame_insert ( struct hash_elem *new )
 {
 	struct hash_elem *e ;
 
-	/*lock_acquire(&frame);*/
 	e = hash_insert (&frames, new);
-	/*lock_release(&frame);*/
 
 	return e ;	
 }
 
-// Allocate a frame from the user pool
+// Allocate a frame from the user pool.
+// If the user pool is empty, evict a page and then return that.
+// The evicted page will be written to the swap space if it is dirty. Else, its reference is dropped
 struct frame * frame_allocate (void)
 {
 	void *kpage = palloc_get_page(PAL_USER) ;
 	if ( kpage == NULL )
 	{
-		/*printf ("Ran out of frame\n");*/
+		// No more free frames available, evict a frame in memory
 		struct frame *evicted = evict_frame() ;
-		if ( evicted == NULL )
-			printf ( "EVICTED is NULL\n");
-		/*printf ( "Exit frame_allocate\n");*/
+		evicted->t = thread_current() ;
 		return evicted ;
-		//PANIC("OUT OF MEMORY");
 	}
 
-	struct frame *f = (struct frame *) malloc ( sizeof(struct frame) ) ;
+	struct frame *f = (struct frame *)malloc(sizeof(struct frame)) ;
 	if ( f == NULL )
 	{
 		palloc_free_page(kpage) ;
-		PANIC("OUT OF KERNEL MEMEORY");
+		PANIC("frame_allocate: Could not allocate memory for struct frame");
 	}
+	
 	f->kpage = kpage ;
 	f->t = thread_current() ;
-	list_push_back(&frame_list,&f->elem);
-
-	/*lock_acquire(&frame);*/
 	frame_insert(&f->hash_elem);
-	/*lock_release(&frame);*/
+
+	// Add the frame to the list of frames
+	list_push_back(&frame_list,&f->elem);
 
 	return f ;
 }
@@ -112,40 +108,27 @@ void frame_deallocate (void *kpage)
 	return ;
 }
 
+// Function to evict a frame.
+// If the frame is dirty, write it to SWAP. Else, remove its reference
+// IMPORTANT: Uses FIFO page replacement algorithm. This can be improved TODO
 struct frame * evict_frame()
 {
-	/*int x ;*/
-
+	// Get the frame to evict using FIFO algorithm
+	// Pop from the frame_list and push it back again
 	struct list_elem *e ;
 	e = list_pop_front (&frame_list) ;
 	struct frame *f = list_entry(e, struct frame, elem) ;
 	list_push_back(&frame_list, e) ;
 
-	/*static int victim = 1 ;*/
-	/*[>int victim = random_ulong() % hash_size(&frames);<]*/
-
-	/*struct hash *h = &frames ;*/
-	/*struct hash_iterator i;*/
-	/*hash_first(&i,h);*/
-	/*for ( x = 0 ; x < victim ; x ++ )*/
-	/*hash_next(&i);*/
-	/*victim++ ;*/
-
-	/*struct frame *f = hash_entry(hash_cur(&i),struct frame, hash_elem);*/
-
-	if ( f->p->addr == NULL )
-		printf ( "F became NULL\n") ;
-
-	/*printf ( "Hash Entry, addr: %p\n", f->p->addr ) ;*/
 	bool dirty = pagedir_is_dirty(f->t->pagedir, f->p->addr) ;
 	if ( dirty )
 	{
-		/*printf ( "Dirty. Writing to swap\n");*/
+		// Move the frame to swap block device
 		swap_page(f->p, f->t) ;
 	}
 	else
 	{
-		/*printf ( "NOT dirty\n");*/
+		// Remove the frames' references
 		f->p->kpage = NULL ;
 		pagedir_clear_page(f->t->pagedir,f->p->addr);
 	}
@@ -153,6 +136,5 @@ struct frame * evict_frame()
 	f->p = NULL ;
 	f->t = NULL ;
 
-	/*printf ( "Exit evict_frame\n");*/
 	return f ;
 }
