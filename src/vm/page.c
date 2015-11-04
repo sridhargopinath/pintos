@@ -58,92 +58,78 @@ struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new )
 	return e ;	
 }
 
-static bool install_page (void *upage, void *kpage, bool writable)
-{
-	struct thread *t = thread_current ();
-
-	/* Verify that there's not already a page at that virtual
-	   address, then map our page there. */
-	return (pagedir_get_page (t->pagedir, upage) == NULL
-			&& pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
 // Function to allocate a frame to the given address
 // Return FALSE if it is a bad address
 bool get_page( void *addr )
 {
+	struct thread *cur = thread_current() ;
+
 	// Get the page number with the offset set to 0
 	void *upage = pg_round_down(addr) ;
 
 	// Find in the supplymentary page table
 	struct page *p = page_lookup ( upage ) ;
 	if ( p == NULL )
-	{
 		return false ;
-	}
 
-	ASSERT( p->addr == upage ) ;
-
-	// Page is in swap space
+	// Check if the page is in swap space
 	if ( p->swap != NULL )
 	{
 		lock_acquire(&frame) ;
 		load_swap_slot(p,thread_current());
 		lock_release(&frame) ;
+		
 		return true ;
 	}
 
-	/* Get a page of memory. */
+	// Get a page of memory
 	lock_acquire(&frame) ;
 	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;
 
 	f->p = p ;
+
+	p->kpage = f->kpage ;
+
 	void *kpage = f->kpage ;
 
-	if (kpage == NULL)
-	{
-		printf ( "NO MORE FRAMES. Palloc failed\n" ) ;
-		return false;
-	}
-
-	p->kpage = kpage ;
-
-	file_seek(p->file, p->ofs) ;
-	size_t zero_bytes = PGSIZE - p->read_bytes ;
-
-	/* Load this page. */
-
-	lock_acquire(&file_lock);
+	lock_acquire(&file_lock);	
+	// Store the old offset of the file
 	off_t old_ofs = file_tell(p->file) ;
-	off_t read = file_read(p->file, p->kpage, p->read_bytes) ;
+
+	// Read from the file at the particular offset
+	file_seek(p->file, p->ofs) ;
+	file_read(p->file, p->kpage, p->read_bytes) ;
+
+	// Put the file pointer back to the old offset
 	file_seek(p->file,old_ofs);
 	lock_release(&file_lock);
 
-	if (read != (int) p->read_bytes)
-	{
-		printf ( "FILE READ FAILED\n" ) ;
-		palloc_free_page (kpage);
-		return false;
-	}
+	// Zero the remaining bytes, if any, in the page
+	size_t zero_bytes = PGSIZE - p->read_bytes ;
 	memset (kpage + p->read_bytes, 0, zero_bytes);
 
+
 	/* Add the page to the process's address space. */
-	if (!install_page (p->addr, kpage, p->writable))
-	{
-		palloc_free_page (kpage);
-		return false;
-	}
-	p->kpage = kpage ;
+	bool success = pagedir_set_page( cur->pagedir, p->addr, kpage, p->writable) ;
+	if (!success)
+		PANIC("get_page: pagedir_set_page returned false");
 
 	return true ;
 }
 
+// Function to satisfy the stack request at ADDR by allocating a new page
 bool grow_stack ( void *addr )
 {
+	struct thread *cur = thread_current() ;
+
+	// Get the page number with the offset set to 0
 	void *upage = pg_round_down(addr) ;
 
+	// Index the supplymentary page table
 	struct page *page = page_lookup(upage) ;
+	
+	// Check if the page is present in the swap. If so, copy to memory
 	if ( page != NULL )
 	{
 		if ( page->swap != NULL )
@@ -151,20 +137,25 @@ bool grow_stack ( void *addr )
 			lock_acquire(&frame);
 			load_swap_slot(page,thread_current());
 			lock_release(&frame);
+			
 			return true ;
 		}
 	}
 
-	/*printf ( "Not null\n");*/
+	// Get a new frame
 	lock_acquire(&frame) ;
 	struct frame *f = frame_allocate() ;
 	lock_release(&frame) ;
-
+	
+	memset(f->kpage, 0, PGSIZE) ;
+	
 	void *kpage = f->kpage ;
 
-	memset(kpage, 0, PGSIZE) ;
-
+	// Get a new supplymentary page table entry
 	struct page *p = (struct page*) malloc (sizeof(struct page)) ;
+	if ( p == NULL )
+		PANIC("grow_stack: Failed to allocate memory to page table");
+	
 	p->file = NULL ;
 	p->addr = upage ;
 	p->kpage = kpage ;
@@ -175,27 +166,30 @@ bool grow_stack ( void *addr )
 
 	p->swap = NULL ;
 
+	// Update frame table entry
 	f->p = p ;
 
+	// Insert it into the hash table
 	page_insert ( &thread_current()->pages, &p->hash_elem ) ;
 
-	install_page ( p->addr, p->kpage, true ) ;
+	bool success = pagedir_set_page( cur->pagedir, p->addr, p->kpage, true) ;
+	if (!success)
+		PANIC("grow_stack: pagedir_set_page returned false");
 
 	return true ;
 }
 
 // Remove the page from the supplymentary page table
-// IMPORTANT: This is called only inside EXIT when the process is exiting
-// This function shouldn't be called explicitely
+// IMPORTANT: This is called from two places:
+// munmap: When unmapping a mapped memory. AUX will be 1 during this call. Do NOT free memory as it will be done by the caller along with deleting the entry in the hash
+// exit: hash_destroy will call this function on all the entries in the hash i.e supplymentary page table. AUX will be 0 during this call. FREE memory in this case. Each hash element will be deleted by the caller.
 void page_deallocate ( struct hash_elem *e, void *aux)
 {
 	struct page *p = hash_entry ( e, struct page, hash_elem) ;
 	if ( p == NULL )
-	{
-		PANIC("Trying to deallocate the page not present");
-		return ;
-	} 
+		PANIC("page_deallocate: Trying to deallocate the page not present");
 
+	// If no frame table is allocated, just free page table
 	void *kpage = p->kpage ;
 	if ( kpage == NULL )
 	{
@@ -204,11 +198,10 @@ void page_deallocate ( struct hash_elem *e, void *aux)
 		return ;
 	}
 
+	// Deallocate the frame assigned to this page
 	lock_acquire(&frame);
 	frame_deallocate(kpage) ;
 	lock_release(&frame);
-
-	/*hash_delete (&thread_current()->pages,&p->hash_elem) ;*/
 
 	pagedir_clear_page(thread_current()->pagedir, p->addr) ;
 

@@ -37,6 +37,7 @@ void swap_init(void)
 }
 
 // Move the page P of thread T to the swap space
+// NOTE: Frame table for this particular page is assumed to be changed by the CALLER
 // NOTE: This function is called while holding the FRAME lock
 void swap_page ( struct page *p, struct thread *t )
 {
@@ -77,7 +78,7 @@ void swap_page ( struct page *p, struct thread *t )
 
 // Function to load a page back from the swap to the memory
 // NOTE: This function will be called while holding the FRAME lock
-void load_swap_slot(struct page *p, struct thread *t)
+void load_swap_slot(struct page *p, struct thread *cur)
 {
 	// Get a new free frame in the memory
 	struct frame *f = frame_allocate() ;
@@ -100,13 +101,14 @@ void load_swap_slot(struct page *p, struct thread *t)
 
 	// Mark this page as available in the page directory of the current thread
 	// Set this page as dirty again since it was in swap because it was dirty
-	pagedir_set_page ( t->pagedir, p->addr, p->kpage, p->writable ) ;
-	pagedir_set_dirty ( t->pagedir, p->addr, true ) ;
+	pagedir_set_page ( cur->pagedir, p->addr, p->kpage, p->writable ) ;
+	pagedir_set_dirty ( cur->pagedir, p->addr, true ) ;
 
 	// Mark the positions in the BITMAP in the swap device as free
 	bitmap_set_multiple(bitmap, slot->pos, PGSIZE/BLOCK_SECTOR_SIZE, false ) ;
 
 	// Remove the swap slot from the list and free memory
+	slot->p = NULL ;
 	list_remove(&slot->elem) ;
 	free(slot) ;
 
@@ -133,6 +135,7 @@ void invalidate_swap_slots ( struct thread *cur)
 		// Reset the bits in the BITMAP representing the free sectors in the swap slot
 		bitmap_set_multiple(bitmap, slot->pos, PGSIZE/BLOCK_SECTOR_SIZE, false ) ;
 
+		slot->p = NULL ;
 		list_remove ( &slot->elem );
 		free(slot);
 	}

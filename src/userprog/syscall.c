@@ -471,26 +471,19 @@ void close ( int fd )
 	struct map_info *m = get_map_info_FD(fd);
 	if ( m == NULL )
 	{
-		/*printf ( "Mmap NULL\n");*/
 		lock_acquire ( &file_lock ) ;
 		file_close ( f->file ) ;
 		lock_release ( &file_lock ) ;
 	}
-	/*else*/
-	/*printf ("mmap not null\n");*/
-
 
 	list_remove ( &f->elem) ;
 	free(f) ;
 
-	/*printf ( "finish close\n");*/
 	return ;
 }
 
 mapid_t mmap ( int fd, void *addr )
 {
-	/*printf ( "Inside mmap\n" ) ;*/
-	/*return -1 ;*/
 	struct thread *cur = thread_current() ;
 
 	if ( pg_ofs(addr) != 0 )
@@ -509,7 +502,6 @@ mapid_t mmap ( int fd, void *addr )
 	if ( page_lookup(addr) != NULL )
 		return -1 ;
 
-	/*printf ("Before file_length\n");*/
 	lock_acquire(&file_lock) ;
 	int size = file_length(file_info->file) ;
 	lock_release(&file_lock) ;
@@ -532,7 +524,6 @@ mapid_t mmap ( int fd, void *addr )
 	int read_bytes = size ;
 	int page_read_bytes, ofs = 0 ;
 	int pagesNum = 0 ;
-	/*printf ( "file length in mmap is %u\n", file_length(file_info->file));*/
 	while ( read_bytes > 0 )
 	{
 		struct page *p = (struct page *) malloc ( sizeof(struct page));
@@ -540,8 +531,6 @@ mapid_t mmap ( int fd, void *addr )
 			PANIC("MMAP: SPTE memory allocation failed\n");
 
 		page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE ;
-
-		/*printf ("inside loop of mmap\n");*/
 
 		p->file = file_info->file ;
 		p->addr = addr ;
@@ -562,42 +551,27 @@ mapid_t mmap ( int fd, void *addr )
 		addr += PGSIZE ;
 		pagesNum ++ ;
 
-		/*printf ( "Addr of file * is %p\n addr of addr %p\n offset is %u\nRead bytes is %d\nWritable is %d\n", p->file, p->addr, p->ofs, p->read_bytes, p->writable) ;*/
-
 		struct mmap_page *m_page = (struct mmap_page *)malloc(sizeof(struct mmap_page));
 		m_page->p = p ;
 		list_push_back(&newMap->pages, &m_page->elem) ;
 	}
 
-
-	/*printf ( "%d number of pages allocated using mmap\n",pagesNum);*/
-	/*printf ( "RETURN from MMAP\n");*/
 	return newMap->mapid ;
 }
 
 void munmap ( mapid_t mapping )
 {
-	/*printf ( "Inside munmap of %s\n", thread_current()->name);*/
-	/*printPageTable();*/
 	struct thread *cur = thread_current() ;
 
-	/*printf ( "Size of mmaps before munmap is %d\n", list_size(&cur->mmaps)) ;*/
 	struct map_info *map = get_map_info ( mapping ) ;
 	if ( map == NULL )
 		return ;
 
-	/*printf ( "FD is %d\n", map->fd);*/
-	/*if ( map->file != get_file_info(map->fd)->file )*/
-	/*printf ( "FDs are not equal\n");*/
-
 	off_t old_ofs = tell(map->fd) ;
-	/*printf ( "Old ofs is %u\n", old_ofs);*/
 
-	/*printf ( "Map id to unmap is %d\n",map->mapid) ;*/
 	struct list_elem *e, *next ;
 	for ( e = list_begin(&map->pages) ; e != list_end(&map->pages) ; e = next )
 	{
-		/*printf ( "Inside loop\n");*/
 		next = list_next(e) ;
 		struct mmap_page *map_page = list_entry(e, struct mmap_page, elem) ;
 		struct page *p = map_page->p ;
@@ -614,53 +588,29 @@ void munmap ( mapid_t mapping )
 		bool is_dirty = pagedir_is_dirty(cur->pagedir,upage) ;
 		if ( is_dirty )
 		{
-			/*printf ( "Dirty\n");*/
-			/*write ( 1, upage, p->read_bytes) ;*/
 			seek(map->fd, p->ofs);
-			/*printf ( "seek\n");*/
-			/*printf ( "ofs: %d\n", tell(map->fd));*/
 			write(map->fd, upage, p->read_bytes) ;
-			/*printf ( "Write\n");*/
-			/*if ( written == p->read_bytes )*/
-			/*printf ( "Wrote successfully\n");*/
-			/*else*/
-			/*printf ( "Write failed: %u and %u\n", written, p->read_bytes);*/
-			/*lock_acquire(&file_lock);*/
-			/*file_seek(p->file, p->ofs) ;*/
-			/*file_write(p->file, upage, p->read_bytes);*/
-			/*lock_release(&file_lock);*/
 		}
 
-		/*printf ( "before deallocate::\n");*/
-		/*printPageTable();*/
 		page_deallocate(h, (void*)1) ;
 
-		/*printf ( "After deallocate::\n");*/
-		/*printPageTable();*/
 		hash_delete(&cur->pages, h);
 
 		free(p);
 		free(map_page) ;
-		/*list_remove(e) ;*/
 	}
-	/*printf ( "Out of the loop\n");*/
 	seek(map->fd, old_ofs);
 
-	/*printf ("before close\n");*/
 	if ( get_file_info(map->fd) == NULL )
 	{
-		/*printf ( "Closing file in munmap\n");*/
 		lock_acquire(&file_lock);
 		file_close(map->file);
 		lock_release(&file_lock);
 	}
-	/*printf ( "After close\n");*/
 
 	list_remove(&map->elem);
 	free(map) ;
 
-	/*printf ( "after munmap:\n");*/
-	/*printPageTable();*/
 	return ;
 }
 
