@@ -16,12 +16,12 @@ struct list frame_list ;
 // Frame table entry
 struct frame
 {
-	struct hash_elem hash_elem ;
+	struct hash_elem hash_elem ;			// Hash element for storing frame table in the hash
 	
-	void *kpage ;
-	struct page *p ;
-	struct thread *t ;
-	struct list_elem elem ;
+	void *kpage ;							// Kernel virtual address of the frame
+	struct page *p ;						// Supplymentary page table entry this frame corresponds to
+	struct thread *t ;						// The thread to which this frame belongs to
+	struct list_elem elem ;					// List element for the list used for eviction algorithm
 } ;
 
 // Initialize the frame table and the lock to synchronize the access to frame table

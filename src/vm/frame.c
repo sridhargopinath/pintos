@@ -71,15 +71,14 @@ struct frame * frame_allocate (void)
 		// No more free frames available, evict a frame in memory
 		struct frame *evicted = evict_frame() ;
 		evicted->t = thread_current() ;
+		
 		return evicted ;
 	}
 
+	// Get memory for new frame table entry
 	struct frame *f = (struct frame *)malloc(sizeof(struct frame)) ;
 	if ( f == NULL )
-	{
-		palloc_free_page(kpage) ;
 		PANIC("frame_allocate: Could not allocate memory for struct frame");
-	}
 	
 	f->kpage = kpage ;
 	f->t = thread_current() ;
@@ -96,13 +95,11 @@ void frame_deallocate (void *kpage)
 {
 	struct frame *f = frame_lookup(kpage) ;
 	if ( f == NULL )
-	{
 		PANIC("Deallocating a FRAME not present\n");
-		return ;
-	}
 
 	palloc_free_page(kpage) ;
 	hash_delete( &frames, &f->hash_elem) ;
+	list_remove(&f->elem) ;
 	free(f) ;
 
 	return ;
