@@ -125,6 +125,7 @@ void invalidate_swap_slots ( struct thread *cur)
 	hash_first(&i,h);
 	while ( hash_next(&i) )
 	{
+		// Check if there are in the swap space
 		struct page *p = hash_entry(hash_cur(&i),struct page, hash_elem);
 		if ( p->swap == NULL )
 			continue ;

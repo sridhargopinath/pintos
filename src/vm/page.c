@@ -58,8 +58,8 @@ struct hash_elem * page_insert ( struct hash *pages, struct hash_elem *new )
 	return e ;	
 }
 
-// Function to allocate a frame to the given address
-// Return FALSE if it is a bad address
+// Function checks if there a valid supplymentary page table entry for ADDR
+// If so, it will allocate a frame for that. Else, will return false
 bool get_page( void *addr )
 {
 	struct thread *cur = thread_current() ;
@@ -108,7 +108,6 @@ bool get_page( void *addr )
 	// Zero the remaining bytes, if any, in the page
 	size_t zero_bytes = PGSIZE - p->read_bytes ;
 	memset (kpage + p->read_bytes, 0, zero_bytes);
-
 
 	/* Add the page to the process's address space. */
 	bool success = pagedir_set_page( cur->pagedir, p->addr, kpage, p->writable) ;

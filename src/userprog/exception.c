@@ -191,6 +191,7 @@ page_fault (struct intr_frame *f)
 	else
 		success = get_page(fault_addr) ;
 
+	// If couldn't service the page fault, exit the process
 	if ( !success )
 		exit(-1) ;
 

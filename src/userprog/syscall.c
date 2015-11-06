@@ -78,7 +78,7 @@ static void munmap ( mapid_t mapping ) ;
 
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
-static void check_buffer ( const uint8_t *addr, int size ) ;
+static void check_buffer ( const void *addr, int size ) ;
 static void check_file ( const uint8_t *addr) ;
 
 static mapid_t allocateMAPID (void) ;
@@ -182,6 +182,8 @@ void exit ( int status )
 	lock_release(&frame);
 
 	// Free the Supplymentary hash table
+	// Here, since the AUX argument is NOT 1, the page_deallocate function will actually call FREE(P) for all the pages present in the current process. You shouldn't call free(p) explicitely for pages after this.
+	// Also, since we are using hash_destroy, each element will be removed from the hash implicitely.
 	if ( hash_size(&cur->pages) != 0 )
 		hash_destroy ( &cur->pages, page_deallocate) ;
 
@@ -293,11 +295,9 @@ bool remove ( const char *file )
 // Opens an already existing file
 int open ( const char *file )
 {
-	/*printf ( "Inside open %s\n", file ) ;*/
 	// Check the validity of the address of the file and also the filename
 	check_file ( (uint8_t *)file ) ;
 
-	/*printf ( "after check file \n");*/
 	lock_acquire ( &file_lock) ;
 
 	bool check ;
@@ -345,7 +345,6 @@ int open ( const char *file )
 
 	lock_release ( &file_lock ) ;
 
-	/*printf ( "Fininsh open\n");*/
 	return info->fd ;
 }
 
@@ -366,7 +365,6 @@ int filesize ( int fd )
 // Reads SIZE bytes from the file with file descriptor FD into the BUFFER
 int read ( int fd, void *buffer, unsigned size )
 {
-	/*printf ( "Inside read esp: %p\n", thread_current()->esp ) ;*/
 	// Reading from STD OUTPUT
 	if ( fd == 1 )
 		return 0 ;
@@ -392,8 +390,6 @@ int read ( int fd, void *buffer, unsigned size )
 	int read = file_read ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
-	/*printf ( "Data read\n");*/
-	/*write(1,buffer,size);*/
 	return read ;
 }
 
@@ -404,10 +400,8 @@ int write ( int fd, void *buffer, unsigned size )
 	if ( fd == 0 )
 		return 0 ;
 
-	/*printf ( "Inside write\n") ;*/
 	// Check if the buffer is valid or not upto size bytes
 	check_buffer ( (uint8_t *)buffer, size ) ;
-	/*printf ("reached 2\n");*/
 
 	// Write to terminal
 	if ( fd == 1 )
@@ -417,7 +411,6 @@ int write ( int fd, void *buffer, unsigned size )
 		lock_release ( &file_lock ) ;
 	}
 
-	/*printf ("reached 3\n");*/
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return 0 ;
@@ -426,7 +419,6 @@ int write ( int fd, void *buffer, unsigned size )
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
-	/*printf ( "Finish write\n");*/
 	return wrote ;
 }
 
@@ -468,6 +460,9 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
+	// Check if the current file is memory mapped
+	// If so, the file will be closed when it is unmapped
+	// Else, close it
 	struct map_info *m = get_map_info_FD(fd);
 	if ( m == NULL )
 	{
@@ -476,32 +471,39 @@ void close ( int fd )
 		lock_release ( &file_lock ) ;
 	}
 
+	// Free the memory
 	list_remove ( &f->elem) ;
 	free(f) ;
 
 	return ;
 }
 
+// Function to memory map the file with descriptor FD at the address ADDR
 mapid_t mmap ( int fd, void *addr )
 {
 	struct thread *cur = thread_current() ;
 
+	// Addr should be page aligned
 	if ( pg_ofs(addr) != 0 )
 		return -1 ;
 
+	// User virtual address
 	if ( is_user_vaddr(addr) == false )
 		return -1 ;
 
 	if ( addr == NULL )
 		return -1 ;
 
+	// Not a valid File descriptor
 	struct file_info *file_info = get_file_info(fd) ;
 	if ( file_info == NULL )
 		return -1 ;
 
+	// ADDR is already mapped
 	if ( page_lookup(addr) != NULL )
 		return -1 ;
 
+	// File size is 0, then do not map
 	lock_acquire(&file_lock) ;
 	int size = file_length(file_info->file) ;
 	lock_release(&file_lock) ;
@@ -509,21 +511,21 @@ mapid_t mmap ( int fd, void *addr )
 	if ( size == 0 )
 		return -1 ;
 
+	// Create a new map
 	struct map_info *newMap = (struct map_info *) malloc (sizeof(struct map_info));
 	if ( newMap == NULL )
 		PANIC("MMAP: Failed to allocate memory for map_info structure\n");
 
+	// Insert all the details to the new map
 	newMap->mapid = allocateMAPID() ;
 	newMap->fd = file_info->fd ;
 	newMap->file = file_info->file ;
 	list_push_back(&cur->mmaps, &newMap->elem) ;
-
 	list_init(&newMap->pages);
-
 
 	int read_bytes = size ;
 	int page_read_bytes, ofs = 0 ;
-	int pagesNum = 0 ;
+	// Iterate over the size of the file and create a supplymentary page table entry for each page the file has.
 	while ( read_bytes > 0 )
 	{
 		struct page *p = (struct page *) malloc ( sizeof(struct page));
@@ -532,51 +534,65 @@ mapid_t mmap ( int fd, void *addr )
 
 		page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE ;
 
+		// Populate details about each page
 		p->file = file_info->file ;
 		p->addr = addr ;
+		p->kpage = NULL ;
 		p->ofs = ofs ;
 		p->read_bytes = page_read_bytes ;
 		p->writable = true ;
-		p->kpage = NULL ;
 
 		p->stack = false ;
 
 		p->swap = NULL ;
 
-
+		// Insert into the HASH
 		page_insert ( &cur->pages, &p->hash_elem ) ;
 
+		// Create a new object to keep track that this PAGE belongs to this MMAP
+		struct mmap_page *m_page = (struct mmap_page *)malloc(sizeof(struct mmap_page));
+		if ( m_page == NULL )
+			PANIC("mmap: mmap_page memory allocation failed\n");
+
+		m_page->p = p ;
+		list_push_back(&newMap->pages, &m_page->elem) ;
+
+		// Move the pointers
 		read_bytes -= page_read_bytes ;
 		ofs += page_read_bytes ;
 		addr += PGSIZE ;
-		pagesNum ++ ;
-
-		struct mmap_page *m_page = (struct mmap_page *)malloc(sizeof(struct mmap_page));
-		m_page->p = p ;
-		list_push_back(&newMap->pages, &m_page->elem) ;
 	}
 
 	return newMap->mapid ;
 }
 
+// Function to UNMAP a particular mapped memory
 void munmap ( mapid_t mapping )
 {
 	struct thread *cur = thread_current() ;
 
+	// Check if the mapping exists
 	struct map_info *map = get_map_info ( mapping ) ;
 	if ( map == NULL )
 		return ;
 
+	// Store the current offset of the file which will change if we write the file.
 	off_t old_ofs = tell(map->fd) ;
 
 	struct list_elem *e, *next ;
+	// Iterate over all the pages that are present for this paricular MMAP and check if they are dirty
+	// If dirty, write it to the disk
+	// Else, remove the supplymentary page table entry
 	for ( e = list_begin(&map->pages) ; e != list_end(&map->pages) ; e = next )
 	{
 		next = list_next(e) ;
+
 		struct mmap_page *map_page = list_entry(e, struct mmap_page, elem) ;
 		struct page *p = map_page->p ;
 		struct hash_elem *h = &p->hash_elem ;
 
+		// If present in SWAP, remove from swap and load to memory
+		// Then write to the file
 		if ( p->swap != NULL )
 		{
 			lock_acquire(&frame);
@@ -584,23 +600,29 @@ void munmap ( mapid_t mapping )
 			lock_release(&frame);
 		}
 
+		// Check if the page is dirty. If true, write to file
 		void *upage = p->addr ;
 		bool is_dirty = pagedir_is_dirty(cur->pagedir,upage) ;
 		if ( is_dirty )
 		{
+			// Write the page to the offset indicated by the entry in the supplymentary page table
 			seek(map->fd, p->ofs);
 			write(map->fd, upage, p->read_bytes) ;
 		}
 
+		// Deallocate page
+		// NOTE: This call to deallocate has AUX value as 1. This means that the page_deallocate will not call FREE(P) and that we should do it after the function returns.
 		page_deallocate(h, (void*)1) ;
-
 		hash_delete(&cur->pages, h);
-
 		free(p);
+
 		free(map_page) ;
 	}
+
+	// Restore the original offset of the file
 	seek(map->fd, old_ofs);
 
+	// If the current file is not yet closed explicitely by a sytem call, do it now.
 	if ( get_file_info(map->fd) == NULL )
 	{
 		lock_acquire(&file_lock);
@@ -608,6 +630,7 @@ void munmap ( mapid_t mapping )
 		lock_release(&file_lock);
 	}
 
+	// Free the memory
 	list_remove(&map->elem);
 	free(map) ;
 
@@ -644,25 +667,30 @@ int get_user (const uint8_t *uaddr)
 
 // Checks if the BUFFER of size SIZE bytes is mapped and are in user address space
 // If not, exit
-void check_buffer ( const uint8_t *addr, int size )
+// This is done by copying a byte from every page the buffer occupies. This is done only at the page boundaries
+void check_buffer ( const void *addr, int size )
 {
-	int tmp, i ;
-	for( i = 0 ; i <= size-1 ; i++ )
+	int tmp ;
+	if ( get_user(addr) == -1 )
+		exit(-1) ;
+
+	uint32_t i ;
+	for( i = (uint32_t)pg_round_up(addr) ; i < (uint32_t)addr+size ; i += PGSIZE )
 	{
-		tmp = get_user(addr + i);
+		tmp = get_user((void*)i);
 		if(tmp == -1)
-			/*{*/
-			/*printf ( "Exit %d\n", i) ;*/
 			exit (-1);
-		/*}*/
 	}
 	return ;
 }
 
 // Checks if the first 14 bytes of the address are mapped and are in user address space
 // If not, exit
+// NOTE: This won't work for the exact 14 bytes. Hence I am sending the length of the string
+// TODO
 void check_file ( const uint8_t *addr )
 {
+	/*check_buffer ( addr, 14) ;*/
 	check_buffer ( addr, strlen((char*)addr)+1) ;
 	return ;
 }
@@ -751,6 +779,7 @@ mapid_t allocateMAPID ()
 
 	return newMapID ;
 }
+
 // Function used allocate File Descriptors for each open file
 int allocateFD ()
 {
@@ -784,20 +813,19 @@ static void syscall_handler (struct intr_frame *f)
 	for ( i = 0 ; i < n ; i ++ )
 		pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
 
-	/*printf ( "sysnum is %d\n", sysNum ) ;*/
 	switch ( sysNum )
 	{
-		case SYS_HALT:		halt () ;
-							break ;
+		case SYS_HALT:			halt () ;
+								break ;
 
-		case SYS_EXIT:		exit ( (int)pargs[0] ) ;
-							break ;
+		case SYS_EXIT:			exit ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
-							break ;
+		case SYS_EXEC:			f->eax = exec ( (char*)pargs[0] ) ;
+								break ;
 
-		case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
-							break ;
+		case SYS_WAIT:			f->eax = wait ( (pid_t)pargs[0] ) ;
+								break ;
 
 		case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
 								break ;
@@ -805,35 +833,32 @@ static void syscall_handler (struct intr_frame *f)
 		case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
 								break ;
 
-		case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
-							break ;
+		case SYS_OPEN:			f->eax = open ( (char*)pargs[0] ) ;
+								break ;
 
-		case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
-							break ;
+		case SYS_FILESIZE:		f->eax = filesize ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
-							break ;
+		case SYS_READ:			f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
+								break ;
 
-		case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
-							break ;
+		case SYS_WRITE:			f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
+								break ;
 
-		case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
-							break ;
+		case SYS_SEEK:			seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
+								break ;
 
-		case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
-							break ;
+		case SYS_TELL:			f->eax = tell ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_CLOSE:		close ( (int)pargs[0] ) ;
-							break ;
+		case SYS_CLOSE:			close ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_MMAP:		//printf ( "mmap called\n");
-							f->eax = mmap ( (int)pargs[0], (void *)pargs[1] ) ;
-							break ;
+		case SYS_MMAP:			f->eax = mmap ( (int)pargs[0], (void *)pargs[1] ) ;
+								break ;
 
-		case SYS_MUNMAP:	//printf ("UNMAP IS called\n");
-							munmap ( (mapid_t)pargs[0] ) ;
-
-							break ;
+		case SYS_MUNMAP:		munmap ( (mapid_t)pargs[0] ) ;
+								break ;
 
 		default:				break ;
 	}

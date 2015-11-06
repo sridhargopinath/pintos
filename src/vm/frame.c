@@ -63,6 +63,7 @@ struct hash_elem * frame_insert ( struct hash_elem *new )
 // Allocate a frame from the user pool.
 // If the user pool is empty, evict a page and then return that.
 // The evicted page will be written to the swap space if it is dirty. Else, its reference is dropped
+// NOTE: This function is called while holding the FRAME lock
 struct frame * frame_allocate (void)
 {
 	void *kpage = palloc_get_page(PAL_USER) ;
@@ -91,12 +92,14 @@ struct frame * frame_allocate (void)
 }
 
 // Deallocate a frame and update the same in the frame table
+// NOTE: This function is called while holding the FRAME lock
 void frame_deallocate (void *kpage)
 {
 	struct frame *f = frame_lookup(kpage) ;
 	if ( f == NULL )
 		PANIC("Deallocating a FRAME not present\n");
 
+	// Free the memory
 	palloc_free_page(kpage) ;
 	hash_delete( &frames, &f->hash_elem) ;
 	list_remove(&f->elem) ;
@@ -108,6 +111,7 @@ void frame_deallocate (void *kpage)
 // Function to evict a frame.
 // If the frame is dirty, write it to SWAP. Else, remove its reference
 // IMPORTANT: Uses FIFO page replacement algorithm. This can be improved TODO
+// NOTE: This function is called while holding the FRAME lock
 struct frame * evict_frame()
 {
 	// Get the frame to evict using FIFO algorithm
