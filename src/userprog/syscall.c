@@ -47,7 +47,7 @@ static void close ( int fd ) ;
 
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
-static void check_buffer ( const uint8_t *addr, int size ) ;
+static void check_buffer ( const void *addr, int size ) ;
 static void check_file ( const uint8_t *addr) ;
 
 static int allocateFD (void) ;
@@ -56,17 +56,17 @@ static struct file_info *get_file_info ( int fd ) ;
 
 void syscall_init (void)
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+	intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
-  // Initialize lock used for accessing filesys
-  lock_init(&file_lock) ;
+	// Initialize lock used for accessing filesys
+	lock_init(&file_lock) ;
 
-  // Initialize the condtional lock used by EXEC
-  cond_init(&exec_cond) ;
-  lock_init(&exec_lock) ;
+	// Initialize the condtional lock used by EXEC
+	cond_init(&exec_cond) ;
+	lock_init(&exec_lock) ;
 
-  // Initialize the File Descriptor lock
-  lock_init(&fd_lock) ;
+	// Initialize the File Descriptor lock
+	lock_init(&fd_lock) ;
 }
 
 // Array to store the number of arguments required for each system call
@@ -412,22 +412,22 @@ void close ( int fd )
 }
 
 /* Reads a word at user virtual address UADDR.
-UADDR must be below PHYS_BASE.
-Returns the word value if successful, -1 if a segfault occurred. */
+   UADDR must be below PHYS_BASE.
+   Returns the word value if successful, -1 if a segfault occurred. */
 int get_word_user (const int *uaddr)
 {
-  int result;
-  if ((void *) uaddr >= PHYS_BASE)
-    exit(-1);
+	int result;
+	if ((void *) uaddr >= PHYS_BASE)
+		exit(-1);
 
-  asm ("movl $1f, %0; movl %1, %0; 1:"
-    : "=&a" (result) : "m" (*uaddr));
-  return result;
+	asm ("movl $1f, %0; movl %1, %0; 1:"
+			: "=&a" (result) : "m" (*uaddr));
+	return result;
 }
 
 /*Reads a byte at user virtual address UADDR.
-UADDR must be below PHYS_BASE.
-Returns the byte value if successful, -1 if a segfault occurred.*/
+  UADDR must be below PHYS_BASE.
+  Returns the byte value if successful, -1 if a segfault occurred.*/
 int get_user (const uint8_t *uaddr)
 {
 	int result;
@@ -435,30 +435,35 @@ int get_user (const uint8_t *uaddr)
 		return -1;
 
 	asm ("movl $1f, %0; movzbl %1, %0; 1:"
-		: "=&a" (result) : "m" (*uaddr));
+			: "=&a" (result) : "m" (*uaddr));
 	return result;
 }
 
 // Checks if the BUFFER of size SIZE bytes is mapped and are in user address space
 // If not, exit
-void check_buffer ( const uint8_t *addr, int size )
+void check_buffer ( const void *addr, int size )
 {
-  int tmp, i ;
-  for( i = 0 ; i <= size ; i++ )
-  {
-	  tmp = get_user(addr + i);
-	  if(tmp == -1)
-		  exit (-1);
-  }
-  return ;
+	int tmp ;
+	if ( get_user(addr) == -1 )
+		exit(-1) ;
+
+	uint32_t i ;
+	for( i = (uint32_t)pg_round_up(addr) ; i < (uint32_t)addr+size ; i += PGSIZE )
+	{
+		tmp = get_user((void*)i);
+		if(tmp == -1)
+			exit (-1);
+	}
+	return ;
 }
 
 // Checks if the first 14 bytes of the address are mapped and are in user address space
 // If not, exit
 void check_file ( const uint8_t *addr )
 {
-  check_buffer ( addr, 14 ) ;
-  return ;
+	/*check_buffer ( addr, 14) ;*/
+	check_buffer ( addr, strlen((char*)addr)+1) ;
+	return ;
 }
 
 // Get the file_info structure for a given File Descriptor
@@ -503,59 +508,59 @@ int allocateFD ()
 // All the addresses are virtually and should be converted to physical addresses before use
 static void syscall_handler (struct intr_frame *f)
 {
-  // Get the syscall number from the stack pointer
-  int sysNum  = get_word_user((int*)f->esp) ;
+	// Get the syscall number from the stack pointer
+	int sysNum  = get_word_user((int*)f->esp) ;
 
-  // Number of arguments required for this system call
-  int n = argsNum[sysNum] ;
+	// Number of arguments required for this system call
+	int n = argsNum[sysNum] ;
 
-  // Get N arguments from the stack and store their values as void pointers in an array
-  void *pargs[n] ;
-  int i ;
-  for ( i = 0 ; i < n ; i ++ )
-	  pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
+	// Get N arguments from the stack and store their values as void pointers in an array
+	void *pargs[n] ;
+	int i ;
+	for ( i = 0 ; i < n ; i ++ )
+		pargs[i] = (void *) get_word_user ( (int*)f->esp + i + 1 ) ;
 
-  switch ( sysNum )
-  {
-	  case SYS_HALT:		halt () ;
+	switch ( sysNum )
+	{
+		case SYS_HALT:		halt () ;
 							break ;
 
-	  case SYS_EXIT:		exit ( (int)pargs[0] ) ;
+		case SYS_EXIT:		exit ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
+		case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
 							break ;
 
-	  case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
+		case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
 							break ;
 
-	  case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
+		case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
+								break ;
+
+		case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
+								break ;
+
+		case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
 							break ;
 
-	  case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
+		case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
+		case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
 							break ;
 
-	  case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
+		case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
 							break ;
 
-	  case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
+		case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
 							break ;
 
-	  case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
+		case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
+		case SYS_CLOSE:		close ( (int)pargs[0] ) ;
 							break ;
 
-	  case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
-							break ;
-
-	  case SYS_CLOSE:		close ( (int)pargs[0] ) ;
-							break ;
-
-	  default:				break ;
-  }
+		default:				break ;
+	}
 }
