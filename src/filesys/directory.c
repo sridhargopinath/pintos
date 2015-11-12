@@ -108,6 +108,7 @@ lookup (const struct dir *dir, const char *name,
           *ofsp = ofs;
         return true;
       }
+  /*printf ( "Lookup failed\n");*/
   return false;
 }
 
@@ -125,9 +126,15 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (name != NULL);
 
   if (lookup (dir, name, &e, NULL))
+  {
+	  /*printf ( "here\n");*/
     *inode = inode_open (e.inode_sector);
+  }
   else
+  {
+	  /*printf ( "Became null\n");*/
     *inode = NULL;
+  }
 
   return *inode != NULL;
 }

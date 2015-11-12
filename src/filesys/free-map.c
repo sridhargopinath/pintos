@@ -80,6 +80,8 @@ free_map_create (void)
   free_map_file = file_open (inode_open (FREE_MAP_SECTOR));
   if (free_map_file == NULL)
     PANIC ("can't open free map");
+  /*printf ("here\n");*/
   if (!bitmap_write (free_map, free_map_file))
     PANIC ("can't write free map");
+  /*printf ("here2\n");*/
 }

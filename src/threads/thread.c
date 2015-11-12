@@ -303,7 +303,10 @@ thread_create (const char *name, int priority,
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
+  {
+	  printf ( "thread_create: get page failed\n");
     return TID_ERROR;
+  }
 
   /* Initialize thread. */
   init_thread (t, name, priority);
@@ -347,6 +350,7 @@ thread_create (const char *name, int priority,
   t->info = (struct process_info*) malloc (sizeof(struct process_info)) ;
   if ( t->info == NULL )
   {
+	  printf ( "thread_create: malloc of process_info failed\n");
 	  // IMPORTANT: We need to deallocate all the memory before and exit the thread
 	  // I do not know a way of doing this. We will just return ERROR for now
 	  return TID_ERROR ;

@@ -7,6 +7,8 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 
+#include "filesys/cache.h"
+
 /* Partition that contains the file system. */
 struct block *fs_device;
 
@@ -24,10 +26,16 @@ filesys_init (bool format)
   inode_init ();
   free_map_init ();
 
+  // Initialize the buffer cache blocks
+  cache_init() ;
+
   if (format) 
     do_format ();
 
+  /*printf ( "Return from do format\n") ;*/
+
   free_map_open ();
+  
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -35,6 +43,9 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
+  // Release the buffer cache and write all the dirty blocks to the disk
+  release_cache() ;
+
   free_map_close ();
 }
 
@@ -72,6 +83,7 @@ filesys_open (const char *name)
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
   dir_close (dir);
+  /*printf ( " inode: %p dir: %p\n", inode, dir ) ;*/
 
   return file_open (inode);
 }
@@ -95,7 +107,9 @@ static void
 do_format (void)
 {
   printf ("Formatting file system...");
+  /*printf ( "Enter free map create\n");*/
   free_map_create ();
+  /*printf ( "Return from free map create\n");*/
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
   free_map_close ();
