@@ -44,6 +44,11 @@ static int write ( int fd, void *buffer, unsigned size ) ;
 static void seek ( int fd, unsigned position ) ;
 static unsigned tell ( int fd ) ;
 static void close ( int fd ) ;
+static bool chdir ( const char *dir ) ;
+static bool mkdir ( const char *dir ) ;
+static bool readdir ( int fd, char *name ) ;
+static bool isdir ( int fd ) ;
+static int inumber ( int fd ) ;
 
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
@@ -84,6 +89,13 @@ static int argsNum[] = {
 	2,			// SYS_SEEK
 	1,			// SYS_TELL
 	1,			// SYS_CLOSE
+	2,			// SYS_MMAP
+	1,			// SYS_MUNMAP
+	1,			// SYS_CHDIR
+	1,			// SYS_MKDIR
+	2,			// SYS_READDIR
+	1,			// SYS_ISDIR
+	1			// SYS_INUMBER
 } ;
 
 // Exit the OS by just calling the shutdown function
@@ -411,6 +423,31 @@ void close ( int fd )
 	return ;
 }
 
+bool chdir ( const char *dir )
+{
+	return true ;
+}
+
+bool mkdir ( const char *dir )
+{
+	return true ;
+}
+
+bool readdir ( int fd, char *name )
+{
+	return true ;
+}
+
+bool isdir ( int fd )
+{
+	return true ;
+}
+
+int inumber ( int fd )
+{
+	return 0 ;
+}
+
 /* Reads a word at user virtual address UADDR.
    UADDR must be below PHYS_BASE.
    Returns the word value if successful, -1 if a segfault occurred. */
@@ -522,17 +559,17 @@ static void syscall_handler (struct intr_frame *f)
 
 	switch ( sysNum )
 	{
-		case SYS_HALT:		halt () ;
-							break ;
+		case SYS_HALT:			halt () ;
+								break ;
 
-		case SYS_EXIT:		exit ( (int)pargs[0] ) ;
-							break ;
+		case SYS_EXIT:			exit ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_EXEC:		f->eax = exec ( (char*)pargs[0] ) ;
-							break ;
+		case SYS_EXEC:			f->eax = exec ( (char*)pargs[0] ) ;
+								break ;
 
-		case SYS_WAIT:		f->eax = wait ( (pid_t)pargs[0] ) ;
-							break ;
+		case SYS_WAIT:			f->eax = wait ( (pid_t)pargs[0] ) ;
+								break ;
 
 		case SYS_CREATE:		f->eax = create ( (char*)pargs[0], (unsigned)pargs[1] ) ;
 								break ;
@@ -540,26 +577,47 @@ static void syscall_handler (struct intr_frame *f)
 		case SYS_REMOVE:		f->eax = remove ( (char*)pargs[0] ) ;
 								break ;
 
-		case SYS_OPEN:		f->eax = open ( (char*)pargs[0] ) ;
-							break ;
+		case SYS_OPEN:			f->eax = open ( (char*)pargs[0] ) ;
+								break ;
 
-		case SYS_FILESIZE:	f->eax = filesize ( (int)pargs[0] ) ;
-							break ;
+		case SYS_FILESIZE:		f->eax = filesize ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_READ:		f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
-							break ;
+		case SYS_READ:			f->eax = read ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2] ) ;
+								break ;
 
-		case SYS_WRITE:		f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
-							break ;
+		case SYS_WRITE:			f->eax = write ( (int)pargs[0], (void *)pargs[1], (unsigned)pargs[2]) ;
+								break ;
 
-		case SYS_SEEK:		seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
-							break ;
+		case SYS_SEEK:			seek ( (int)pargs[0], (unsigned)pargs[1] ) ;
+								break ;
 
-		case SYS_TELL:		f->eax = tell ( (int)pargs[0] ) ;
-							break ;
+		case SYS_TELL:			f->eax = tell ( (int)pargs[0] ) ;
+								break ;
 
-		case SYS_CLOSE:		close ( (int)pargs[0] ) ;
-							break ;
+		case SYS_CLOSE:			close ( (int)pargs[0] ) ;
+								break ;
+
+		case SYS_MMAP:			
+								break ;
+
+		case SYS_MUNMAP:		
+								break ;
+
+		case SYS_CHDIR:			f->eax = chdir ( (char *)pargs[0] ) ;
+								break ;
+
+		case SYS_MKDIR:			f->eax = mkdir ( (char *)pargs[0] ) ;
+								break ;
+
+		case SYS_READDIR:		f->eax = readdir( (int)pargs[0], (char *)pargs[1] ) ;
+								break ;
+
+		case SYS_ISDIR:			f->eax = isdir ( (int)pargs[0] ) ;
+								break ;
+
+		case SYS_INUMBER:		f->eax = inumber ( (int)pargs[0] ) ;
+								break ;
 
 		default:				break ;
 	}
