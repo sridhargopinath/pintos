@@ -88,7 +88,7 @@ static bool search_block_in_evicted ( block_sector_t idx )
 
 // Query the hash to find the cache block with key IDX
 // If not present, evict a cache block and create a new cache block with IDX and INODE information
-struct cache * get_cache_block ( block_sector_t idx )
+struct cache * get_cache_block ( block_sector_t idx, bool read )
 {
 	// I acquire the lock before I check if the block is present in evict_list because:
 	// In between I release the lock EVICT and I acquire lock CACHE, someone else might come and evict IDX
@@ -97,7 +97,7 @@ struct cache * get_cache_block ( block_sector_t idx )
 
 
 	// Check if the block is about to be evicted from the buffer cache
-	// If so, sleep for 100 ticks and wait for it to be evicted
+	// If so, sleep for 20 ticks and wait for it to be evicted
 	while ( 1 )
 	{
 		bool present ;
@@ -106,7 +106,11 @@ struct cache * get_cache_block ( block_sector_t idx )
 		lock_release(&evict) ;
 
 		if ( present == true )
-			timer_sleep(100);
+		{
+			lock_release(&cache) ;
+			timer_sleep(12);
+			lock_acquire(&cache) ;
+		}
 		else
 			break ;
 	}
@@ -129,7 +133,11 @@ struct cache * get_cache_block ( block_sector_t idx )
 
 	lock_release(&cache);
 
-	block_read ( fs_device, lookup->idx, lookup->kblock ) ;
+	if ( read == true )
+	{
+		// Actual read from the disk to the cache for the first time
+		block_read ( fs_device, lookup->idx, lookup->kblock ) ;
+	}
 
 	return lookup ;
 }
@@ -170,12 +178,12 @@ struct cache * cache_allocate ( block_sector_t idx )
 }
 
 // Read from the buffer cache of IDX to ADDR
-void read_cache ( block_sector_t idx, void *addr )
+void read_cache ( block_sector_t idx, void *addr, off_t ofs, int size )
 {
 	/*printf ( "read_cache\n");*/
-	struct cache *c = get_cache_block(idx) ;
+	struct cache *c = get_cache_block(idx, true) ;
 
-	memcpy(addr, c->kblock, BLOCK_SECTOR_SIZE) ;
+	memcpy (addr, c->kblock + ofs, size ) ;
 
 	c->in_use -- ;
 	c->accessed = true ;
@@ -184,12 +192,15 @@ void read_cache ( block_sector_t idx, void *addr )
 }
 
 // Write to the buffer cache of IDX from ADDR
-void write_cache ( block_sector_t idx, const void *addr )
+void write_cache ( block_sector_t idx, const void *addr, off_t ofs, int size, bool read_before_write )
 {
 	/*printf ( "write_cache\n");*/
-	struct cache *c = get_cache_block(idx) ;
+	struct cache *c = get_cache_block(idx, read_before_write) ;
 
-	memcpy(c->kblock, addr, BLOCK_SECTOR_SIZE) ;
+	if ( read_before_write == false && size != BLOCK_SECTOR_SIZE )
+		memset ( c->kblock , 0, BLOCK_SECTOR_SIZE ) ;
+
+	memcpy ( c->kblock + ofs, addr, size ) ;
 
 	c->in_use -- ;
 	c->accessed = true ;
@@ -211,19 +222,19 @@ void cache_deallocate (block_sector_t idx)
 	hash_delete(&cache_blocks, &c->hash_elem);
 	list_remove(&c->elem);
 
-	lock_release(&cache) ;
-
 	// Add this block to the list of evicting blocks
 	lock_acquire(&evict) ;
 	list_push_back(&evict_list, &c->elem) ;
 	lock_release(&evict) ;
 
-	release_block(c) ;
-	/*// Asynchrously write to the file system if required*/
-	/*tid_t tid ;*/
-	/*tid = thread_create("evict_cache", PRI_DEFAULT, release_block, c) ;*/
-	/*if ( tid == TID_ERROR )*/
-		/*PANIC("cache_deallocate: Not able to create a new thread");*/
+	lock_release(&cache) ;
+
+	/*release_block(c) ;*/
+	// Asynchrously write to the file system if required
+	tid_t tid ;
+	tid = thread_create("evict_cache", PRI_DEFAULT+1, release_block, c) ;
+	if ( tid == TID_ERROR )
+		PANIC("cache_deallocate: Not able to create a new thread");
 
 	return ;
 }
@@ -257,12 +268,12 @@ void evict_cache (void)
 				list_push_back(&evict_list, &c->elem) ;
 				lock_release(&evict) ;
 
-				release_block(c) ;
-				/*// Asynchronously write the block to the file system*/
-				/*tid_t tid ;*/
-				/*tid = thread_create( "evict_cache", PRI_DEFAULT, release_block, c) ;*/
-				/*if ( tid == TID_ERROR )*/
-					/*PANIC("evict_cache: Couldn't create a thread for release_block");*/
+				/*release_block(c) ;*/
+				// Asynchronously write the block to the file system
+				tid_t tid ;
+				tid = thread_create( "evict_cache", PRI_DEFAULT+1, release_block, c) ;
+				if ( tid == TID_ERROR )
+					PANIC("evict_cache: Couldn't create a thread for release_block");
 
 				break ;
 			}
@@ -292,6 +303,7 @@ void release_block ( void *aux )
 }
 
 // Remove all the cache blocks in memory and write the dirty blocks to disk
+// NO NEED to do this asynchronously
 void release_cache (void)
 {
 	struct list_elem *e, *next ;
@@ -307,17 +319,11 @@ void release_cache (void)
 		hash_delete(&cache_blocks, &c->hash_elem);
 		list_remove(&c->elem);
 
-		// Add this block to the list of evicting blocks
-		lock_acquire(&evict) ;
-		list_push_back(&evict_list, &c->elem) ;
-		lock_release(&evict) ;
+		if ( c->dirty == true )
+			block_write(fs_device, c->idx, c->kblock) ;
 
-		release_block(c) ;
-		/*// Asynchronously write the block to the file system*/
-		/*tid_t tid ;*/
-		/*tid = thread_create( "evict_cache", PRI_DEFAULT, release_block, c) ;*/
-		/*if ( tid == TID_ERROR )*/
-			/*PANIC("evict_cache: Couldn't create a thread for release_block");*/
+		free(c->kblock) ;
+		free(c);
 	}
 
 	lock_release(&cache);

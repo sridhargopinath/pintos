@@ -5,6 +5,7 @@
 #include "threads/synch.h"
 #include "devices/block.h"
 #include <hash.h>
+#include "filesys/off_t.h"
 
 #define MAX_BUFFER_CACHE 64
 
@@ -49,16 +50,16 @@ struct hash_elem * cache_insert ( struct hash_elem *new ) ;
 
 // Query the hash to find the cache block with key IDX
 // If not present, evict a cache block and create a new cache block with IDX and INODE information
-struct cache * get_cache_block ( block_sector_t idx ) ;
+struct cache * get_cache_block ( block_sector_t idx, bool read ) ;
 
 // Allocate a cache block in the memory
 struct cache * cache_allocate ( block_sector_t idx ) ;
 
 // Read from a block IDX in the buffer cache to ADDR
-void read_cache ( block_sector_t idx, void *addr ) ;
+void read_cache ( block_sector_t idx, void *addr, off_t ofs, int size ) ;
 
 // Write to the block IDX in the buffer cache from ADDR
-void write_cache ( block_sector_t idx, const void *addr ) ;
+void write_cache ( block_sector_t idx, const void *addr, off_t ofs, int size, bool read_before_write ) ;
 
 // Deallocate the cache block and write back to disk if necessary
 void cache_deallocate (block_sector_t idx) ;
