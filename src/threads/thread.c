@@ -105,6 +105,8 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  initial_thread->curdir = ROOT_DIR_SECTOR;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -377,6 +379,14 @@ thread_create (const char *name, int priority,
   list_init(&t->files) ;
 
   #endif
+
+#ifdef FILESYS
+
+  // Copy the sector number of the current directory
+  t->curdir = cur->curdir ;
+
+#endif
+
 
   // Set the NICE and RECENT_CPU value for the thread
   if ( thread_mlfqs )

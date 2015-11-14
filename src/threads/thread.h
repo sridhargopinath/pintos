@@ -7,6 +7,11 @@
 
 #include "threads/synch.h"
 
+#ifdef FILESYS
+#include "devices/block.h"
+#include "filesys/filesys.h"
+#endif
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -126,6 +131,12 @@ struct thread
 	struct list files ;					// List of all the files opened by this thread
 
 	struct file *executable ;			// Executable file of the current process (thread)
+#endif
+
+#ifdef FILESYS
+
+	block_sector_t curdir ;
+
 #endif
 
     /* Owned by thread.c. */
