@@ -51,6 +51,7 @@ static bool readdir ( int fd, char *name ) ;
 static bool isdir ( int fd ) ;
 static int inumber ( int fd ) ;
 
+static int open_root (void) ;
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
 static void check_buffer ( const void *addr, int size ) ;
@@ -234,14 +235,14 @@ bool create ( const char *path_, unsigned initial_size )
 		return false ;
 	}
 
-	/*printf ( "Filename is %s\n", name) ;*/
+	printf ( "Create: %s\n", name ) ;
 	// Create the file
 	lock_acquire ( &file_lock) ;
 	bool ret = filesys_create ( dir, name, initial_size ) ;
 	lock_release ( &file_lock ) ;
 
-	if ( ret == false )
-		printf ( "touch failed\n") ;
+	/*if ( ret == false )*/
+		/*printf ( "touch failed\n") ;*/
 
 	free(path) ;
 	lock_release(&dir->lock);
@@ -271,13 +272,46 @@ bool remove ( const char *path_ )
 		return -1 ;
 	}
 
+	/*// Removing root*/
+	/*if ( strcmp(name,"/") == 0 )*/
+	/*{*/
+
+	/*}*/
+
+	/*printf ( "removing %s from dir %s\n", name, path_) ;*/
 	success = dir_remove ( dir, name ) ;
+	/*printf ( " return from remove %s ", success? "SUCCESS":"FAILED");*/
 
 	lock_release(&dir->lock);
 	dir_close(dir) ;
+	/*printf ( " Passed dir_ close\n") ;*/
 	free(path) ;
 
 	return success ;
+}
+
+
+int open_root (void)
+{
+	struct inode *inode = inode_open(ROOT_DIR_SECTOR) ;
+	struct file *file = file_open(inode) ;
+	if ( file == NULL || inode == NULL )
+		return -1 ;
+
+	// Create a FILE_INFO object to store the info of the open file
+	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
+	if ( info == NULL )
+	{
+		file_close(file) ;
+		return -1 ;
+	}
+
+	// Allocate new File Descriptor to the opened file
+	info->fd = allocateFD() ;
+	info->file = file ;
+	list_push_back ( &thread_current()->files, &info->elem ) ;
+
+	return info->fd ;
 }
 
 // Opens an already existing file
@@ -299,35 +333,39 @@ int open ( const char *path_)
 		return -1 ;
 	}
 
+	printf ( "open: %s\n", name ) ;
 	lock_acquire ( &file_lock) ;
 
 	struct inode *inode ;
-	bool is_root = false ;
 
+	// If root, do not close DIR
 	if ( strcmp(name, "/") == 0 )
 	{
-		inode = dir_get_inode(dir) ;
-		is_root = true ;
+		lock_release(&dir->lock) ;
+		dir_close(dir) ;
+
+		int root_fd = open_root() ;
+
+		lock_release(&file_lock) ;
+		free(path) ;
+		return root_fd ;
 	}
 
 	// Check if the file already exists
-	if ( is_root == false )
+	success = dir_lookup ( dir, name, &inode ) ;
+	if ( success == false )
 	{
-		success = dir_lookup ( dir, name, &inode ) ;
-		if ( success == false )
-		{
-			lock_release(&dir->lock) ;
-			dir_close(dir) ;
-			lock_release ( &file_lock ) ;
-			free(path) ;
-			return -1 ;
-		}
+		lock_release(&dir->lock) ;
+		dir_close(dir) ;
+		lock_release ( &file_lock ) ;
+		free(path) ;
+		return -1 ;
 	}
 
-	printf ( "inumber before closing: %d\n", inode_get_inumber(dir_get_inode(dir)));
+	/*printf ( "inumber before closing: %d\n", inode_get_inumber(dir_get_inode(dir)));*/
 	lock_release(&dir->lock) ;
 	dir_close(dir) ;
-	printf ( "inumber after closing: %d\n", inode_get_inumber(dir_get_inode(dir)));
+	/*printf ( "inumber after closing: %d\n", inode_get_inumber(dir_get_inode(dir)));*/
 
 	// Open the file
 	struct file *newFile = file_open ( inode ) ;
@@ -337,6 +375,7 @@ int open ( const char *path_)
 		free(path);
 		return -1 ;
 	}
+	/*printf ( "After file open: %d\n", inode_get_inumber(inode)) ;*/
 
 	// Create a FILE_INFO object to store the info of the open file
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
@@ -353,7 +392,7 @@ int open ( const char *path_)
 	info->file = newFile ;
 	list_push_back ( &thread_current()->files, &info->elem ) ;
 
-	printf ( "FD: %d\n", info->fd) ;
+	/*printf ( "FD: %d\n", info->fd) ;*/
 	lock_release ( &file_lock ) ;
 	free(path);
 
@@ -436,6 +475,7 @@ int write ( int fd, void *buffer, unsigned size )
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
+	printf ( "Wrote: %d\n", wrote ) ;
 	return wrote ;
 }
 
@@ -477,6 +517,7 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
+	printf ( "close\n" ) ;
 	lock_acquire ( &file_lock ) ;
 	file_close ( f->file ) ;
 	lock_release ( &file_lock ) ;
@@ -574,7 +615,7 @@ int inumber ( int fd )
 		printf ( "inode is null\n") ;
 
 	block_sector_t inumber = inode_get_inumber(inode) ;
-	printf ( "inumber: %d fd: %d\n", inumber,fd ) ;
+	/*printf ( "inumber: %d fd: %d\n", inumber,fd ) ;*/
 
 	return inumber ;
 }

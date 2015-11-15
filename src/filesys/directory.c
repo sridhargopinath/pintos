@@ -194,7 +194,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector, bool is
 static bool dir_remove_dir ( struct inode *inode )
 {
 	if ( inode->data.isdir == false )
+	{
+		printf ( "Not a directory\n") ;
 		return false ;
+	}
 
 	struct dir *dir = dir_open(inode) ;
 
@@ -210,6 +213,7 @@ static bool dir_remove_dir ( struct inode *inode )
 
 	bool success = dir_remove ( dir, "." ) && dir_remove ( dir, "..") ;
 
+	/*printf ( "Success: %d\n", success ) ;*/
 	// Iterate over all threads and set the CURDIR to -1 if it is equal to DIR
 	if ( success == true )
 	{
@@ -220,14 +224,18 @@ static bool dir_remove_dir ( struct inode *inode )
 		{
 			struct thread *t = list_entry ( e, struct thread, allelem) ;
 			if ( t->curdir == inode_get_inumber(inode) )
+			{
+				/*printf ( "t->curdir: %d innumber: %d\n", t->curdir, inode_get_inumber(inode)) ;*/
 				t->curdir = 0 ;
+			}
 		}
 
 		intr_set_level(old_level) ;
 	}
 
 	lock_release(&dir->lock) ;
-	dir_close(dir) ;
+	/*dir_close(dir) ;*/
+	free(dir);
 	
 	return success ;
 }
@@ -255,8 +263,13 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
-  if ( e.isdir == true )
+  /*printf ( "name: %s\n", name ) ;*/
+  bool isDot = !strcmp(name,".") || !strcmp(name,"..");
+
+  /*printf ( "here3 %d and %d\n", e.isdir, isDot);*/
+  if ( e.isdir == true && isDot == false )
   {
+	  /*printf ( "removing directory\n") ;*/
 	  if ( dir_remove_dir(inode) == false )
 		  goto done;
   }
@@ -266,8 +279,9 @@ dir_remove (struct dir *dir, const char *name)
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
 
-  /* Remove inode. */
-  inode_remove (inode);
+  // Remove the inode only when . and .. are not there
+  if ( isDot == false )
+	  inode_remove (inode);
   success = true;
 
  done:
@@ -331,34 +345,41 @@ bool dir_mkdir ( char *path )
 	// The directory where NAME should be created is DIR. The lock for DIR is already acquired
 
 	block_sector_t inode_sector = 0 ;
+	success = (dir != NULL
+			&& free_map_allocate (1, &inode_sector)
+			&& dir_create (inode_sector, 16, dir)
+			&& dir_add (dir, name, inode_sector, true));
 
-	if ( free_map_allocate ( 1, &inode_sector ) == false )
-	{
-		lock_release(&dir->lock) ;
-		dir_close(dir) ;
-		return false ;
-	}
+	if (!success && inode_sector != 0) 
+		free_map_release (inode_sector, 1);
 
-	if ( dir_create(inode_sector, 16, dir) == false )
-	{
-		free_map_release(inode_sector, 1) ;
-		lock_release(&dir->lock) ;
-		dir_close(dir) ;
-		return false ;
-	}
+	/*if ( free_map_allocate ( 1, &inode_sector ) == false )*/
+	/*{*/
+		/*lock_release(&dir->lock) ;*/
+		/*dir_close(dir) ;*/
+		/*return false ;*/
+	/*}*/
 
-	if ( dir_add ( dir, name, inode_sector, true ) == false )
-	{
-		// Steps to remove an inode. TODO
-		struct inode *inode = inode_open(inode_sector) ;
-		inode_remove(inode) ;
-		inode_close(inode) ;
-
+	/*if ( dir_create(inode_sector, 16, dir) == false )*/
+	/*{*/
 		/*free_map_release(inode_sector, 1) ;*/
-		lock_release(&dir->lock) ;
-		dir_close(dir) ;
-		return false ;
-	}
+		/*lock_release(&dir->lock) ;*/
+		/*dir_close(dir) ;*/
+		/*return false ;*/
+	/*}*/
+
+	/*if ( dir_add ( dir, name, inode_sector, true ) == false )*/
+	/*{*/
+		/*// Steps to remove an inode. TODO*/
+		/*struct inode *inode = inode_open(inode_sector) ;*/
+		/*inode_remove(inode) ;*/
+		/*inode_close(inode) ;*/
+
+		/*[>free_map_release(inode_sector, 1) ;<]*/
+		/*lock_release(&dir->lock) ;*/
+		/*dir_close(dir) ;*/
+		/*return false ;*/
+	/*}*/
 
 	lock_release(&dir->lock) ;
 	dir_close(dir) ;
@@ -381,9 +402,13 @@ bool verify_path ( char *path, struct dir **dir, char **file_name, bool open_fil
 		curdir = dir_open_root() ;
 	else
 	{
+		/*printf ( "inside verify_path\n" ) ;*/
 		// If the current directory has been deleted
 		if ( cur->curdir == 0 )
+		{
+			/*printf ( "curdir is 0\n");*/
 			return false ;
+		}
 
 		curdir = dir_open(inode_open(cur->curdir)) ;
 	}
@@ -398,14 +423,14 @@ bool verify_path ( char *path, struct dir **dir, char **file_name, bool open_fil
 	if ( par == NULL )
 	{
 		*dir = curdir ;
-		printf ( "Here\n") ;
+		/*printf ( "Here\n") ;*/
 		/*(*file_name)[0] = '/' ;*/
 		/*(*file_name)[1] = '\0' ;*/
 		path[1] = '\0' ;
 		*file_name = path ;
 		/*strlcpy(*file_name, path, 2);*/
-		printf ( "Here\n") ;
-		printf ( "inumber in verify is: %d\n", inode_get_inumber(dir_get_inode(curdir))) ;
+		/*printf ( "Here\n") ;*/
+		/*printf ( "inumber in verify is: %d\n", inode_get_inumber(dir_get_inode(curdir))) ;*/
 		return true ;
 	}
 
