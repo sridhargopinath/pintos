@@ -44,6 +44,8 @@ bytes_to_sectors (off_t size)
 static block_sector_t
 byte_to_sector (struct inode *inode, off_t pos) 
 {
+	bool success ;
+
 	ASSERT (inode != NULL);
 	if ( pos > MAXFILESIZE )
 		return -1 ;
@@ -62,7 +64,13 @@ byte_to_sector (struct inode *inode, off_t pos)
 	// If second level not present, create a second level entry
 	if ( level1 == 0 )
 	{
-		free_map_allocate(1, &level1 ) ;
+		success = free_map_allocate(1, &level1 ) ;
+		if ( success == false )
+		{
+			printf ( "failed1\n\n") ;
+			return -1 ;
+		}
+
 		write_cache ( level1, zeros, 0, BLOCK_SECTOR_SIZE, false ) ;
 
 		write_cache ( inode->data.start, &level1, level1pos, sizeof(block_sector_t), true) ;
@@ -77,7 +85,13 @@ byte_to_sector (struct inode *inode, off_t pos)
 	// If second level not present, create a second level entry
 	if ( level2 == 0 )
 	{
-		free_map_allocate(1, &level2 ) ;
+		success = free_map_allocate(1, &level2 ) ;
+		if ( success == false )
+		{
+			printf ( "failed2\n\n") ;
+			return -1 ;
+		}
+
 		write_cache ( level2, zeros, 0, BLOCK_SECTOR_SIZE, false ) ;
 
 		write_cache ( level1, &level2, level2pos, sizeof(block_sector_t), true) ;
@@ -229,6 +243,7 @@ inode_close (struct inode *inode)
       /* Deallocate blocks if removed. */
       if (inode->removed) 
         {
+			/*printf ( "REmoveing inside inode\n") ;*/
 		  int i, j ;
 		  char level1arr[BLOCK_SECTOR_SIZE] ;
 		  read_cache( inode->data.start, level1arr, 0, BLOCK_SECTOR_SIZE ) ;
@@ -236,6 +251,7 @@ inode_close (struct inode *inode)
 		  for ( i = 0 ; i < LEVEL1SIZE ; i ++ )
 		  {
 			  block_sector_t *level1 = (block_sector_t *) (level1arr+(i*sizeof(block_sector_t))) ;
+			  /*printf ( "\nlevel%d: %d\n", i, *level1) ;*/
 			  if ( *level1 == 0 )
 				  continue ;
 
@@ -244,7 +260,8 @@ inode_close (struct inode *inode)
 
 			  for ( j = 0 ; j < LEVEL2SIZE ; j ++ )
 			  {
-				  block_sector_t *level2 = (block_sector_t *) (level2arr+(i*sizeof(block_sector_t))) ;
+				  block_sector_t *level2 = (block_sector_t *) (level2arr+(j*sizeof(block_sector_t))) ;
+				  /*printf ( "level%d: %d   ", j, *level2 ) ;*/
 				  if ( *level2 == 0 )
 					  continue ;
 
@@ -283,10 +300,16 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   /*uint8_t *bounce = NULL;*/
 
+  if ( offset + size > inode_length(inode) )
+	  return 0 ;
+
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+	  if ( (signed)sector_idx == -1 )
+		  break ;
+
 	  /*printf ( "after byte to sector %d\n", sector_idx) ;*/
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
@@ -356,10 +379,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
 	  write_cache ( inode->sector, &inode->data, 0, BLOCK_SECTOR_SIZE, false ) ;
   }
+
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+	  if ( (signed)sector_idx == -1 )
+		  break ;
+
 	  /*printf ( "  finished byte to sector\n");*/
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 

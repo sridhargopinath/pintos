@@ -21,6 +21,7 @@ dir_create (block_sector_t sector, size_t entry_cnt, struct dir *parent)
 
   /*printf ( "before dir_open\n");*/
   struct dir *dir = dir_open(inode_open(sector)) ;
+  lock_acquire(&dir->lock) ;
 
   /*printf ( "Before add .\n");*/
   dir_add ( dir, ".", sector, true ) ;
@@ -30,7 +31,7 @@ dir_create (block_sector_t sector, size_t entry_cnt, struct dir *parent)
   else
 	  dir_add ( dir, "..", dir_get_inode(parent)->sector, true ) ;
 
-  /*printf ( "Before close\n");*/
+  lock_release(&dir->lock) ;
   dir_close(dir) ;
 
   return true ;
@@ -197,15 +198,14 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector, bool is
   return success;
 }
 
-static bool dir_remove_dir ( struct inode *inode )
+static bool dir_remove_dir ( struct dir *dir )
 {
+	struct inode *inode = dir_get_inode(dir) ;
 	if ( inode->data.isdir == false )
 	{
 		printf ( "Not a directory\n") ;
 		return false ;
 	}
-
-	struct dir *dir = dir_open(inode) ;
 
 	lock_acquire(&dir->lock) ;
 
@@ -213,16 +213,19 @@ static bool dir_remove_dir ( struct inode *inode )
 	if ( size != 2 )
 	{
 		lock_release(&dir->lock) ;
-		dir_close(dir) ;
 		return false ;
 	}
 
-	bool success = dir_remove ( dir, "." ) && dir_remove ( dir, "..") ;
+	/*bool success = dir_remove ( dir, "." ) && dir_remove ( dir, "..") ;*/
+
+	/*lookup (dir, ".", &e, &ofs) ;*/
+		/*e.in_use = false;*/
+	/*if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) */
 
 	/*printf ( "Success: %d\n", success ) ;*/
 	// Iterate over all threads and set the CURDIR to -1 if it is equal to DIR
-	if ( success == true )
-	{
+	/*if ( success == true )*/
+	/*{*/
 		enum intr_level old_level = intr_disable();
 
 		struct list_elem *e ;
@@ -237,13 +240,13 @@ static bool dir_remove_dir ( struct inode *inode )
 		}
 
 		intr_set_level(old_level) ;
-	}
+	/*}*/
 
 	lock_release(&dir->lock) ;
 	/*dir_close(dir) ;*/
-	free(dir);
+	/*free(dir);*/
 	
-	return success ;
+	return true ;
 }
 
 /* Removes any entry for NAME in DIR.
@@ -270,13 +273,21 @@ dir_remove (struct dir *dir, const char *name)
     goto done;
 
   /*printf ( "name: %s\n", name ) ;*/
-  bool isDot = !strcmp(name,".") || !strcmp(name,"..");
+  /*bool isDot = !strcmp(name,".") || !strcmp(name,"..");*/
 
   /*printf ( "here3 %d and %d\n", e.isdir, isDot);*/
-  if ( e.isdir == true && isDot == false )
+  if ( e.isdir == true ) //&& isDot == false )
   {
 	  /*printf ( "removing directory\n") ;*/
-	  if ( dir_remove_dir(inode) == false )
+	  /*inode_reopen(inode) ;*/
+	  struct dir *rmdir = dir_open(inode) ;
+
+	  bool res = dir_remove_dir(rmdir) ;
+	  free(rmdir) ;
+	  /*dir_close(rmdir) ;*/
+
+	  /*printf ( "return from remove %d\n", res ) ;*/
+	  if ( res == false )
 		  goto done;
   }
 
@@ -286,10 +297,11 @@ dir_remove (struct dir *dir, const char *name)
     goto done;
 
   // Remove the inode only when . and .. are not there
-  if ( isDot == false )
-	  inode_remove (inode);
+  /*if ( isDot == false )*/
+  inode_remove (inode);
   success = true;
 
+  /*printf ( "before close\n") ;*/
  done:
   inode_close (inode);
   return success;
@@ -343,7 +355,7 @@ bool dir_mkdir ( char *path )
 
 	// Verify the path given and return the directory where we should create a file
 	success = verify_path ( path, &dir, &name, false ) ;
-	/*printf ( " Name in mkdir: %s\n", name ) ;*/
+	/*printf ( " Name in mkdir: %s ", name ) ;*/
 
 	if ( success == false )
 		return false ;
@@ -390,7 +402,7 @@ bool dir_mkdir ( char *path )
 	lock_release(&dir->lock) ;
 	dir_close(dir) ;
 
-	return true ;
+	return success ;
 }
 
 // Given PATH, it will store to DIR the end directory and to FILE_NAME the last name in PATH
@@ -436,7 +448,6 @@ bool verify_path ( char *path, struct dir **dir, char **file_name, bool open_fil
 		*file_name = path ;
 		/*strlcpy(*file_name, path, 2);*/
 		/*printf ( "Here\n") ;*/
-		/*printf ( "inumber in verify is: %d\n", inode_get_inumber(dir_get_inode(curdir))) ;*/
 		return true ;
 	}
 

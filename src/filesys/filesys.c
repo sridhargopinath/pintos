@@ -46,7 +46,6 @@ filesys_done (void)
 {
   // Release the buffer cache and write all the dirty blocks to the disk
   release_cache() ;
-
   free_zeros() ;
 
   free_map_close ();

@@ -24,6 +24,7 @@ struct file_info
 {
 	int fd ;
 	struct file *file ;
+	struct dir *dir ;
 	struct list_elem elem ;
 } ;
 
@@ -114,16 +115,6 @@ void exit ( int status )
 
 	printf ( "%s: exit(%d)\n", cur->name, status ) ;
 
-	// TO implement WAIT syscall:
-	// Store the exit status of the current thread in the process_info structure
-	// Signal the semaphore to wake up the parent if the parent thread is waiting on it
-	// DO this only if PARENT is still alive
-	if ( cur->parent != NULL )
-	{
-		cur->info->exit_status = status ;
-		sema_up(&cur->info->sema) ;
-	}
-
 	// Clear the process info objects of all the children and free the memory
 	struct list_elem *e ;
 	for ( e = list_begin(&cur->children) ; e != list_end(&cur->children) ; )
@@ -145,10 +136,21 @@ void exit ( int status )
 		struct file_info *f = list_entry ( e, struct file_info, elem ) ;
 		e = list_next(e) ;
 
-		file_close(f->file) ;
-		list_remove(&f->elem) ;
+		close(f->fd) ;
+		/*file_close(f->file) ;*/
+		/*list_remove(&f->elem) ;*/
 
-		free(f) ;
+		/*free(f) ;*/
+	}
+
+	// TO implement WAIT syscall:
+	// Store the exit status of the current thread in the process_info structure
+	// Signal the semaphore to wake up the parent if the parent thread is waiting on it
+	// DO this only if PARENT is still alive
+	if ( cur->parent != NULL )
+	{
+		cur->info->exit_status = status ;
+		sema_up(&cur->info->sema) ;
 	}
 
 	// process_exit will be called inside this function
@@ -220,7 +222,7 @@ bool create ( const char *path_, unsigned initial_size )
 	// Check the validity of the filename
 	check_file ( (uint8_t *)path_ ) ;
 	if ( strlen(path_) == 0 )
-		return 0 ;
+		return false ;
 
 	char *path = (char*) malloc (strlen(path_)+1) ;
 	strlcpy(path, path_, strlen(path_)+1) ;
@@ -235,7 +237,16 @@ bool create ( const char *path_, unsigned initial_size )
 		return false ;
 	}
 
-	/*printf ( "Create: %s\n", name ) ;*/
+	// If tried to create ROOT
+	if ( strcmp(name, "/") == 0 )
+	{
+		lock_release(&dir->lock) ;
+		dir_close(dir) ;
+		free(path) ;
+		return false ;
+	}
+
+	/*printf ( "Create: %s ", name ) ;*/
 	// Create the file
 	lock_acquire ( &file_lock) ;
 	bool ret = filesys_create ( dir, name, initial_size ) ;
@@ -244,9 +255,9 @@ bool create ( const char *path_, unsigned initial_size )
 	/*if ( ret == false )*/
 		/*printf ( "touch failed\n") ;*/
 
-	free(path) ;
 	lock_release(&dir->lock);
 	dir_close(dir) ;
+	free(path) ;
 
 	return ret ;
 }
@@ -257,7 +268,7 @@ bool remove ( const char *path_ )
 	// Check the validity of the address of the file and also the filename
 	check_file ( (uint8_t *)path_ ) ;
 	if ( strlen(path_) == 0 )
-		return 0 ;
+		return false ;
 
 	char *path = (char*) malloc (strlen(path_)+1) ;
 	strlcpy(path, path_, strlen(path_)+1) ;
@@ -269,21 +280,29 @@ bool remove ( const char *path_ )
 	if ( success == false )
 	{
 		free(path) ;
-		return -1 ;
+		return false ;
 	}
 
-	/*// Removing root*/
-	/*if ( strcmp(name,"/") == 0 )*/
-	/*{*/
-	/*}*/
+	/*struct inode *inode ;*/
+	/*dir_lookup(dir, name, &inode) ;*/
+	/*printf ( "open count before removing is %d\n", inode->open_cnt ) ;*/
+	// Removing root
+	if ( strcmp(name,"/") == 0 )
+	{
+		lock_release(&dir->lock) ;
+		dir_close(dir) ;
+		free(path) ;
+		return false ;
+	}
 
 	/*printf ( "removing %s from dir %s\n", name, path_) ;*/
+	lock_acquire ( &file_lock) ;
 	success = dir_remove ( dir, name ) ;
+	lock_release ( &file_lock) ;
 	/*printf ( " return from remove %s ", success? "SUCCESS":"FAILED");*/
 
 	lock_release(&dir->lock);
 	dir_close(dir) ;
-	/*printf ( " Passed dir_ close\n") ;*/
 	free(path) ;
 
 	return success ;
@@ -293,21 +312,27 @@ bool remove ( const char *path_ )
 int open_root (void)
 {
 	struct inode *inode = inode_open(ROOT_DIR_SECTOR) ;
-	struct file *file = file_open(inode) ;
-	if ( file == NULL || inode == NULL )
-		return -1 ;
+	/*struct file *file = file_open(inode) ;*/
+	struct dir *dir = dir_open(inode);
+
+	/*if ( file == NULL || inode == NULL )*/
+	/*{*/
+		/*inode_close(inode) ;*/
+		/*return -1 ;*/
+	/*}*/
 
 	// Create a FILE_INFO object to store the info of the open file
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
 	if ( info == NULL )
 	{
-		file_close(file) ;
+		dir_close(dir) ;
 		return -1 ;
 	}
 
 	// Allocate new File Descriptor to the opened file
 	info->fd = allocateFD() ;
-	info->file = file ;
+	info->file = NULL ;
+	info->dir = dir ;
 	list_push_back ( &thread_current()->files, &info->elem ) ;
 
 	return info->fd ;
@@ -318,6 +343,8 @@ int open ( const char *path_)
 {
 	// Check the validity of the address of the file and also the filename
 	check_file ( (uint8_t *)path_ ) ;
+	if ( strlen(path_) == 0 )
+		return -1 ;
 
 	char *path = (char*) malloc (strlen(path_)+1) ;
 	strlcpy(path, path_, strlen(path_)+1) ;
@@ -335,65 +362,79 @@ int open ( const char *path_)
 	/*printf ( "open: %s\n", name ) ;*/
 	lock_acquire ( &file_lock) ;
 
-	struct inode *inode ;
-
 	// If root, do not close DIR
 	if ( strcmp(name, "/") == 0 )
 	{
 		lock_release(&dir->lock) ;
 		dir_close(dir) ;
+		free(path) ;
 
 		int root_fd = open_root() ;
 
 		lock_release(&file_lock) ;
-		free(path) ;
 		return root_fd ;
 	}
 
 	// Check if the file already exists
+	struct inode *inode ;
 	success = dir_lookup ( dir, name, &inode ) ;
 	if ( success == false )
 	{
 		lock_release(&dir->lock) ;
 		dir_close(dir) ;
-		lock_release ( &file_lock ) ;
 		free(path) ;
+
+		lock_release ( &file_lock ) ;
 		return -1 ;
 	}
 
 	/*printf ( "inumber before closing: %d\n", inode_get_inumber(dir_get_inode(dir)));*/
 	lock_release(&dir->lock) ;
 	dir_close(dir) ;
+	free(path);
 	/*printf ( "inumber after closing: %d\n", inode_get_inumber(dir_get_inode(dir)));*/
 
-	// Open the file
-	struct file *newFile = file_open ( inode ) ;
-	if ( newFile == NULL )
-	{
-		lock_release ( &file_lock ) ;
-		free(path);
-		return -1 ;
-	}
 	/*printf ( "After file open: %d\n", inode_get_inumber(inode)) ;*/
 
 	// Create a FILE_INFO object to store the info of the open file
 	struct file_info *info = (struct file_info *) malloc ( sizeof(struct file_info)) ;
 	if ( info == NULL )
 	{
-		file_close ( newFile ) ;
 		lock_release ( &file_lock ) ;
-		free(path);
 		return -1 ;
+	}
+
+	if ( inode_isdir(inode) == true )
+	{
+		struct dir *dir = dir_open(inode) ;
+		if ( dir == NULL )
+		{
+			lock_release(&file_lock);
+			return -1 ;
+		}
+		info->dir = dir ;
+		info->file = NULL ;
+	}
+	else
+	{
+		// Open the file
+		struct file *file = file_open(inode) ;
+		if ( file == NULL )
+		{
+			lock_release ( &file_lock ) ;
+			return -1 ;
+		}
+		info->file = file ;
+		info->dir = dir ;
 	}
 
 	// Allocate new File Descriptor to the opened file
 	info->fd = allocateFD() ;
-	info->file = newFile ;
 	list_push_back ( &thread_current()->files, &info->elem ) ;
 
+	/*printf ( "Open count is %d\n", inode->open_cnt ) ;*/
 	/*printf ( "FD: %d\n", info->fd) ;*/
 	lock_release ( &file_lock ) ;
-	free(path);
 
 	return info->fd ;
 }
@@ -404,6 +445,9 @@ int filesize ( int fd )
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return -1 ;
+
+	if ( f->file == NULL )
+		PANIC("Filesize on a directory\n") ;
 
 	lock_acquire ( &file_lock ) ;
 	int size = file_length(f->file) ;
@@ -436,6 +480,9 @@ int read ( int fd, void *buffer, unsigned size )
 	if ( f == NULL )
 		return 0 ;
 
+	if ( f->file == NULL )
+		PANIC("read on a directory\n");
+
 	lock_acquire ( &file_lock ) ;
 	int read = file_read ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
@@ -465,13 +512,21 @@ int write ( int fd, void *buffer, unsigned size )
 	if ( f == NULL )
 		return 0 ;
 
-	// Check if the file is a directory
-	// If so, Return -1
-	if ( inode_isdir(file_get_inode(f->file)) == true )
+	if ( f->file == NULL )
 		return -1 ;
 
 	lock_acquire ( &file_lock ) ;
+
+	// Check if the file is a directory
+	// If so, Return -1
+	if ( inode_isdir(file_get_inode(f->file)) == true )
+	{
+		lock_release ( &file_lock ) ;
+		return 0 ;
+	}
+
 	int wrote = file_write ( f->file, buffer, size ) ;
+
 	lock_release ( &file_lock ) ;
 
 	/*printf ( "Wrote: %d\n", wrote ) ;*/
@@ -484,6 +539,9 @@ void seek ( int fd, unsigned position )
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return ;
+
+	if ( f->file == NULL )
+		PANIC("seek on a directory\n");
 
 	lock_acquire ( &file_lock ) ;
 	file_seek ( f->file, position ) ;
@@ -498,6 +556,9 @@ unsigned tell ( int fd )
 	struct file_info *f = get_file_info ( fd ) ;
 	if ( f == NULL )
 		return 0 ;
+
+	if ( f->file == NULL )
+		PANIC("tell on a directory\n");
 
 	lock_acquire ( &file_lock ) ;
 	unsigned tell = file_tell ( f->file ) ;
@@ -516,13 +577,17 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
-	/*printf ( "close\n" ) ;*/
 	lock_acquire ( &file_lock ) ;
-	file_close ( f->file ) ;
+
+	if ( f->file != NULL )
+		file_close ( f->file ) ;
+	else
+		dir_close ( f->dir ) ;
+
 	lock_release ( &file_lock ) ;
 
 	// Free the memory
-	list_remove ( &f->elem) ;
+	list_remove(&f->elem) ;
 	free(f) ;
 
 	return ;
@@ -530,6 +595,9 @@ void close ( int fd )
 
 bool chdir ( const char *path_ )
 {
+	if ( strlen(path_) == 0 )
+		return false ;
+
 	char *path = (char*) malloc (strlen(path_)+1) ;
 	strlcpy(path, path_, strlen(path_)+1) ;
 
@@ -543,6 +611,8 @@ bool chdir ( const char *path_ )
 		return false ;
 	}
 
+	lock_acquire ( &file_lock) ;
+
 	struct dir_entry e ;
 	success = lookup(dir, name, &e, NULL ) ;
 	if ( success == false || e.isdir == false )
@@ -550,6 +620,8 @@ bool chdir ( const char *path_ )
 		lock_release(&dir->lock) ;
 		dir_close(dir);
 		free(path);
+
+		lock_release(&file_lock) ;
 		return false ;
 	}
 
@@ -559,18 +631,26 @@ bool chdir ( const char *path_ )
 	dir_close(dir);
 	free(path);
 
+	lock_release(&file_lock) ;
+
 	return true ;
 }
 
-bool mkdir ( const char *dir )
+bool mkdir ( const char *path_)
 {
-	/*printf ( "mkdir: %s\n", dir ) ;*/
-	char *path = (char*) malloc (strlen(dir)+1) ;
-	strlcpy(path, dir, strlen(dir)+1) ;
+	if ( strlen(path_) == 0 )
+		return false ;
 
+	char *path = (char*) malloc (strlen(path_)+1) ;
+	strlcpy(path, path_, strlen(path_)+1) ;
+
+	lock_acquire(&file_lock);
 	bool success = 	dir_mkdir(path) ;
+	lock_release(&file_lock);
 
 	free(path) ;
+
+	/*printf ( "success: %d ", success) ;*/
 	return success ;
 }
 
@@ -580,13 +660,29 @@ bool readdir ( int fd, char *name )
 	if ( info == false )
 		return false ;
 
-	struct dir *dir = dir_open(file_get_inode(info->file)) ;
+	lock_acquire(&file_lock);
+
+	struct dir *dir = info->dir ;
 	lock_acquire(&dir->lock) ;
 
 	bool success = dir_readdir_without_dot ( dir, name ) ;
 
+	/*if ( fd == 963 )*/
+	/*{*/
+		/*printf ( "size: %d\n",dir_size(dir) ) ;*/
+	/*}*/
+
+	/*if ( success == false )*/
+		/*printf ( "failed pos: %d\n", dir->pos) ;*/
+	/*else*/
+	/*{*/
+		/*printf ( "read: %s ", name ) ;*/
+	/*}*/
+
+	/*printf ( "Read %s\n", name ) ;*/
 	lock_release(&dir->lock) ;
-	dir_close(dir) ;
+
+	lock_release(&file_lock) ;
 
 	return success ;
 }
@@ -597,10 +693,16 @@ bool isdir ( int fd )
 	if ( info == NULL )
 		return false ;
 
-	if ( inode_isdir(file_get_inode(info->file)) == true )
-		return true ;
+	if ( info->dir == NULL )
+		return false ;
 
-	return false ;
+	return true ;
+
+	/*lock_acquire(&file_lock);*/
+	/*bool success =  inode_isdir(file_get_inode(info->file)) ;*/
+	/*lock_release(&file_lock);*/
+
+	/*return success ;*/
 }
 
 int inumber ( int fd )
@@ -609,11 +711,19 @@ int inumber ( int fd )
 	if ( info == NULL )
 		return -1 ;
 
-	struct inode *inode = file_get_inode(info->file ) ;
-	if ( inode == NULL )
-		printf ( "inode is null\n") ;
+	struct inode *inode ;
+
+	lock_acquire(&file_lock) ;
+
+	if ( info->file == NULL )
+		inode = dir_get_inode(info->dir) ;
+	else
+		inode = file_get_inode(info->file ) ;
 
 	block_sector_t inumber = inode_get_inumber(inode) ;
+
+	lock_release(&file_lock) ;
+
 	/*printf ( "inumber: %d fd: %d\n", inumber,fd ) ;*/
 
 	return inumber ;

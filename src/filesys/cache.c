@@ -14,7 +14,6 @@ struct lock evict ;
 // Initialize the cache block table, list of cache blocks and the lock to synchronize the access to the list of cache blocks
 void cache_init ()
 {
-	/*printf ( "Enter init\n");*/
 	hash_init(&cache_blocks, cache_hash, cache_less, NULL);
 
 	lock_init(&cache) ;
@@ -22,8 +21,6 @@ void cache_init ()
 
 	lock_init(&evict) ;
 	list_init(&evict_list);
-
-	/*printf ( "return from init");*/
 
 	return ;
 }
@@ -95,12 +92,12 @@ struct cache * get_cache_block ( block_sector_t idx, bool read )
 	// Hence I need to acquire the lock on cache and make sure no one else can evict IDX
 	lock_acquire(&cache);
 
-
 	// Check if the block is about to be evicted from the buffer cache
 	// If so, sleep for 20 ticks and wait for it to be evicted
 	while ( 1 )
 	{
 		bool present ;
+
 		lock_acquire(&evict) ;
 		present = search_block_in_evicted ( idx ) ;
 		lock_release(&evict) ;
@@ -186,7 +183,7 @@ void read_cache ( block_sector_t idx, void *addr, off_t ofs, int size )
 	memcpy (addr, c->kblock + ofs, size ) ;
 
 	c->in_use -- ;
-	c->accessed = true ;
+	/*c->accessed = true ;*/
 
 	return ;
 }
@@ -203,7 +200,7 @@ void write_cache ( block_sector_t idx, const void *addr, off_t ofs, int size, bo
 	memcpy ( c->kblock + ofs, addr, size ) ;
 
 	c->in_use -- ;
-	c->accessed = true ;
+	/*c->accessed = true ;*/
 	c->dirty = true ;
 
 	return ;
@@ -227,14 +224,17 @@ void cache_deallocate (block_sector_t idx)
 	list_push_back(&evict_list, &c->elem) ;
 	lock_release(&evict) ;
 
-	lock_release(&cache) ;
+	// No need to write asynchronously as it increases the memory consumption
+	// We do not get any performance as well
+	release_block(c) ;
 
-	/*release_block(c) ;*/
-	// Asynchrously write to the file system if required
-	tid_t tid ;
-	tid = thread_create("evict_cache", PRI_DEFAULT+1, release_block, c) ;
-	if ( tid == TID_ERROR )
-		PANIC("cache_deallocate: Not able to create a new thread");
+	/*[>Asynchrously write to the file system if required<]*/
+	/*tid_t tid ;*/
+	/*tid = thread_create("evict_cache", PRI_DEFAULT+1, release_block, c) ;*/
+	/*if ( tid == TID_ERROR )*/
+		/*PANIC("cache_deallocate: Not able to create a new thread");*/
+
+	lock_release(&cache) ;
 
 	return ;
 }
@@ -268,12 +268,15 @@ void evict_cache (void)
 				list_push_back(&evict_list, &c->elem) ;
 				lock_release(&evict) ;
 
-				/*release_block(c) ;*/
-				// Asynchronously write the block to the file system
-				tid_t tid ;
-				tid = thread_create( "evict_cache", PRI_DEFAULT+1, release_block, c) ;
-				if ( tid == TID_ERROR )
-					PANIC("evict_cache: Couldn't create a thread for release_block");
+				// Write the block to the cache here itself.
+				// No need to create a new thread as it increases the work and memory
+				release_block(c) ;
+
+				/*// Asynchronously write the block to the file system*/
+				/*tid_t tid ;*/
+				/*tid = thread_create( "evict_cache", PRI_DEFAULT+1, release_block, c) ;*/
+				/*if ( tid == TID_ERROR )*/
+					/*PANIC("evict_cache: Couldn't create a thread for release_block");*/
 
 				break ;
 			}
@@ -308,24 +311,42 @@ void release_cache (void)
 {
 	struct list_elem *e, *next ;
 
-	lock_acquire(&cache);
-
 	for ( e = list_begin(&cache_list) ; e != list_end(&cache_list) ; e = next )
 	{
 		next = list_next(e) ;
-
 		struct cache *c = list_entry(e, struct cache, elem) ;
 
-		hash_delete(&cache_blocks, &c->hash_elem);
-		list_remove(&c->elem);
+		cache_deallocate(c->idx) ;
 
-		if ( c->dirty == true )
-			block_write(fs_device, c->idx, c->kblock) ;
+		/*hash_delete(&cache_blocks, &c->hash_elem);*/
+		/*list_remove(&c->elem);*/
 
-		free(c->kblock) ;
-		free(c);
+		/*if ( c->dirty == true )*/
+			/*block_write(fs_device, c->idx, c->kblock) ;*/
+
+		/*free(c->kblock) ;*/
+		/*free(c);*/
+	}
+
+	lock_acquire(&cache);
+
+	for ( e = list_begin(&evict_list) ; e != list_end(&evict_list) ; e = next )
+	{
+		next = list_next(e) ;
+		struct cache *c = list_entry(e, struct cache, elem) ;
+
+		release_block(c) ;
+
+		/*list_remove(&c->elem);*/
+
+		/*if ( c->dirty == true )*/
+			/*block_write(fs_device, c->idx, c->kblock) ;*/
+
+		/*free(c->kblock) ;*/
+		/*free(c);*/
 	}
 
 	lock_release(&cache);
+
 	return ;
 }
