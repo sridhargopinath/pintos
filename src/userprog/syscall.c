@@ -235,7 +235,7 @@ bool create ( const char *path_, unsigned initial_size )
 		return false ;
 	}
 
-	printf ( "Create: %s\n", name ) ;
+	/*printf ( "Create: %s\n", name ) ;*/
 	// Create the file
 	lock_acquire ( &file_lock) ;
 	bool ret = filesys_create ( dir, name, initial_size ) ;
@@ -275,7 +275,6 @@ bool remove ( const char *path_ )
 	/*// Removing root*/
 	/*if ( strcmp(name,"/") == 0 )*/
 	/*{*/
-
 	/*}*/
 
 	/*printf ( "removing %s from dir %s\n", name, path_) ;*/
@@ -333,7 +332,7 @@ int open ( const char *path_)
 		return -1 ;
 	}
 
-	printf ( "open: %s\n", name ) ;
+	/*printf ( "open: %s\n", name ) ;*/
 	lock_acquire ( &file_lock) ;
 
 	struct inode *inode ;
@@ -475,7 +474,7 @@ int write ( int fd, void *buffer, unsigned size )
 	int wrote = file_write ( f->file, buffer, size ) ;
 	lock_release ( &file_lock ) ;
 
-	printf ( "Wrote: %d\n", wrote ) ;
+	/*printf ( "Wrote: %d\n", wrote ) ;*/
 	return wrote ;
 }
 
@@ -517,7 +516,7 @@ void close ( int fd )
 	if ( f == NULL )
 		return ;
 
-	printf ( "close\n" ) ;
+	/*printf ( "close\n" ) ;*/
 	lock_acquire ( &file_lock ) ;
 	file_close ( f->file ) ;
 	lock_release ( &file_lock ) ;

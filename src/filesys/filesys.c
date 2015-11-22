@@ -27,6 +27,7 @@ filesys_init (bool format)
   inode_init ();
   free_map_init ();
 
+  /*printf ( "after free init\n");*/
   // Initialize the buffer cache blocks
   cache_init() ;
 
@@ -45,6 +46,8 @@ filesys_done (void)
 {
   // Release the buffer cache and write all the dirty blocks to the disk
   release_cache() ;
+
+  free_zeros() ;
 
   free_map_close ();
 }
@@ -122,9 +125,11 @@ do_format (void)
   printf ("Formatting file system...");
   /*printf ( "Enter free map create\n");*/
   free_map_create ();
+  /*printf ( "After free_map create\n");*/
   /*printf ( "Return from free map create\n");*/
   if (!dir_create (ROOT_DIR_SECTOR, 16, NULL))
     PANIC ("root directory creation failed");
+  /*printf ( "after dir create\n");*/
   free_map_close ();
   printf ("done.\n");
 }

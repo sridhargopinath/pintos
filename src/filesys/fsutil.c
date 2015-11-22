@@ -120,10 +120,12 @@ fsutil_extract (char **argv UNUSED)
           /* Create destination file. */
           if (!filesys_create (NULL, file_name, size))
             PANIC ("%s: create failed", file_name);
+		  /*printf ( "AFTER FILESYS CREATE\n");*/
           dst = filesys_open (file_name);
           if (dst == NULL)
             PANIC ("%s: open failed", file_name);
 
+		  /*printf ( "AFTER FILESYS open SIZE: %d\n", size);*/
           /* Do copy. */
           while (size > 0)
             {

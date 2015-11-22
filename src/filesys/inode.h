@@ -44,5 +44,6 @@ void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 
 bool inode_isdir ( const struct inode * ) ;
+void free_zeros (void) ;
 
 #endif /* filesys/inode.h */

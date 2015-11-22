@@ -19,8 +19,10 @@ dir_create (block_sector_t sector, size_t entry_cnt, struct dir *parent)
   if ( success == false )
 	  return success ;
 
+  /*printf ( "before dir_open\n");*/
   struct dir *dir = dir_open(inode_open(sector)) ;
 
+  /*printf ( "Before add .\n");*/
   dir_add ( dir, ".", sector, true ) ;
 
   if ( sector == ROOT_DIR_SECTOR )
@@ -28,6 +30,7 @@ dir_create (block_sector_t sector, size_t entry_cnt, struct dir *parent)
   else
 	  dir_add ( dir, "..", dir_get_inode(parent)->sector, true ) ;
 
+  /*printf ( "Before close\n");*/
   dir_close(dir) ;
 
   return true ;
@@ -38,12 +41,14 @@ dir_create (block_sector_t sector, size_t entry_cnt, struct dir *parent)
 struct dir *
 dir_open (struct inode *inode) 
 {
+	/*printf ( "inside dir open\n");*/
   struct dir *dir = calloc (1, sizeof *dir);
   if (inode != NULL && dir != NULL)
     {
       dir->inode = inode;
       dir->pos = 0;
 	  lock_init(&dir->lock) ;
+	  /*printf ( "End dir open\n");*/
       return dir;
     }
   else
@@ -186,6 +191,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector, bool is
   e.inode_sector = inode_sector;
   e.isdir = isdir ;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  /*printf ( "Success: %d\n", success) ;*/
 
  done:
   return success;
