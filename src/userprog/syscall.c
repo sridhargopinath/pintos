@@ -53,14 +53,13 @@ static bool isdir ( int fd ) ;
 static int inumber ( int fd ) ;
 
 static int open_root (void) ;
+static int allocateFD (void) ;
+static struct file_info *get_file_info ( int fd ) ;
+
 static int get_word_user ( const int *uaddr ) ;
 static int get_user ( const uint8_t *uaddr ) ;
 static void check_buffer ( const void *addr, int size ) ;
 static void check_file ( const uint8_t *addr) ;
-
-static int allocateFD (void) ;
-static struct file_info *get_file_info ( int fd ) ;
-
 
 void syscall_init (void)
 {
@@ -639,7 +638,10 @@ bool chdir ( const char *path_ )
 bool mkdir ( const char *path_)
 {
 	if ( strlen(path_) == 0 )
+	{
+		/*printf ( "returned false\n" ) ;*/
 		return false ;
+	}
 
 	char *path = (char*) malloc (strlen(path_)+1) ;
 	strlcpy(path, path_, strlen(path_)+1) ;
@@ -660,6 +662,7 @@ bool readdir ( int fd, char *name )
 	if ( info == false )
 		return false ;
 
+	/*printf ( "inside readdir\n") ;*/
 	lock_acquire(&file_lock);
 
 	struct dir *dir = info->dir ;
@@ -676,7 +679,7 @@ bool readdir ( int fd, char *name )
 		/*printf ( "failed pos: %d\n", dir->pos) ;*/
 	/*else*/
 	/*{*/
-		/*printf ( "read: %s ", name ) ;*/
+		/*printf ( "read: %s\n", name ) ;*/
 	/*}*/
 
 	/*printf ( "Read %s\n", name ) ;*/
@@ -693,16 +696,29 @@ bool isdir ( int fd )
 	if ( info == NULL )
 		return false ;
 
-	if ( info->dir == NULL )
-		return false ;
+	/*printf ( "inside isdir\n") ;*/
+	/*if ( info->dir == NULL )*/
+	/*{*/
+		/*printf ( "dir is null\n" ) ;*/
+		/*return false ;*/
+	/*}*/
+	/*printf ( "dir is NOT null\n") ;*/
 
-	return true ;
+	/*return true ;*/
+	
+	struct inode *inode ;
+	if ( info->file == NULL )
+		inode = dir_get_inode(info->dir) ;
+	else
+		inode = file_get_inode(info->file) ;
 
-	/*lock_acquire(&file_lock);*/
-	/*bool success =  inode_isdir(file_get_inode(info->file)) ;*/
-	/*lock_release(&file_lock);*/
+	lock_acquire(&file_lock);
+	bool success =  inode_isdir(inode) ;
+	lock_release(&file_lock);
+	
+	/*printf ( "isdir is %d\n", success ) ;*/
 
-	/*return success ;*/
+	return success ;
 }
 
 int inumber ( int fd )

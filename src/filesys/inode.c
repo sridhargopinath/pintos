@@ -67,7 +67,7 @@ byte_to_sector (struct inode *inode, off_t pos)
 		success = free_map_allocate(1, &level1 ) ;
 		if ( success == false )
 		{
-			printf ( "failed1\n\n") ;
+			/*printf ( "failed1\n\n") ;*/
 			return -1 ;
 		}
 
@@ -78,7 +78,6 @@ byte_to_sector (struct inode *inode, off_t pos)
 
 	int level2pos = ((pos & LEVEL2MASK) >> LEVEL2SHIFT) * sizeof(block_sector_t) ;
 	block_sector_t level2 ;
-	/*printf ( "   level2pos: %d\n", level2pos) ;*/
 
 	read_cache ( level1, &level2, level2pos, sizeof(block_sector_t) ) ;
 
@@ -88,7 +87,7 @@ byte_to_sector (struct inode *inode, off_t pos)
 		success = free_map_allocate(1, &level2 ) ;
 		if ( success == false )
 		{
-			printf ( "failed2\n\n") ;
+			/*printf ( "failed2\n\n") ;*/
 			return -1 ;
 		}
 
