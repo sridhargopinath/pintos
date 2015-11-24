@@ -26,7 +26,6 @@
 #define SECTORMASK BITMASK(0,9)
 
 // Block of all zeroes which is used to write 0s to a file block
-/*static char zeros[BLOCK_SECTOR_SIZE];*/
 char *zeros ;
 
 /* Returns the number of sectors to allocate for an inode SIZE
