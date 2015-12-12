@@ -90,6 +90,8 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+
+
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
@@ -121,12 +123,56 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+// BUFFER CACHE Blocks
+struct hash cache_blocks ;
+
+// Lock to access the cache blocks
+struct lock cache ;
+
+// List of all the cache blocks in memory
+struct list cache_list ;
+
+// Cache block table entry
+struct cache
+{
+	block_sector_t idx ;					// HASH KEY. Sector number on the disk this block belongs to
+
+	void *kblock ;							// Kernel block which stores the block data
+
+	bool accessed ;							// Accessed flag
+	bool dirty ;							// Dirty flag
+	int in_use ;							// Number of processes currently using this cache block
+
+	struct hash_elem hash_elem ;			// Hash element for storing cache block in the hash
+	struct list_elem elem ;					// List element for the list used for eviction algorithm
+} ;
+
+// List of all the blocks that are in the process of getting evicted
+struct list evict_list ;
+
+// Lock to access the evict_list
+struct lock evict ;
+
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
+I have implemented CLOCK algorithm for the replacement of the cache blocks.
+I have a accessed, dirty and in_use flags in each of the buffer cache blocks. I increase the in_use count of a cache block whenever a request to block comes. This is decremented after the request has been completed. This is done to take of the case when the block is selected for eviction when the block is still in use.
+The access flag is set everytime read or write is called on the cache block.
+Dirty flag is set when the cache block is written.
+The algorithm picks up a cache block and checks if the in_use is 0. If not, puts it at the back of the list and picks the next block. If the accessed flag is true, makes is false and puts it back. If the accessed flag is false, it is selected for eviction.
+If the dirty block is set, then the block is written back to the disk and then removed from the cache block list.
+
+
 >> C3: Describe your implementation of write-behind.
+
+All the writes for a particular cache block is done on the buffer cache block. Only when the block is selected for eviction, then we have to write it back to the disk.
+I check if the dirty flag is set for the cache block. If so, then that block is written back.
+Also, all the blocks are flushed onto the disk when the filesys_done function is executed. This function is executed when the system is shutting down. This is done to make sure that all the cache blocks finally end up in the file system and are not lost by staying in the memory.
+
 
 >> C4: Describe your implementation of read-ahead.
 
@@ -136,8 +182,16 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
+I use a flag called as in_use in each of the cache block entry which indicates the number of processes that are currently using that block.
+While evicting a cache block, in_use is checked and only if it is 0, it is considered for eviction. Else, it is put back at the end of the list and the next candidate is chosen.
+
+
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
+
+I use a evict list which contains the list of all the blocks which are yet to be flushed back into the disk. If a request for that block comes, then I will make the thread sleep for 12 ticks. This is done to make sure that the eviction thread will run and it will evict all the blocks that are in evict_list.
+By doing this, I will be sure that an access to a block will not come during the eviction of that block.
+
 
 ---- RATIONALE ----
 
