@@ -73,6 +73,11 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
 
+I do not take any extra steps to make sure that the fairness is provided for simultaneous reads and writes to a particular file. As mentioned in the documentation, I provide the guarentee that the if simultaneous read and writes occur on a single file, the process which initiated the read will read either nothing which the other process has written, some of what the other process has written or everything which the other process has written.
+Other than this, I do not provide any other synchronization mechanisms for the simultaneous read and writes of the single file.
+It is left to the programs to take care of fairness.
+
+
 ---- RATIONALE ----
 
 >> A6: Is your inode structure a multilevel index?  If so, why did you
@@ -80,6 +85,14 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> indirect blocks?  If not, why did you choose an alternative inode
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
+
+I have a multi level index for finding the block in a particular inode.
+The first level is the single block whose block index is stored in the block.start variable. The second level is indexed by block.start block.
+The actual block where the data is stored is indexed by the second level index.
+I chose this design because this is straight-forward. I can use the same design for any type of block device.
+I chose not to use the direct indexes because the number of direct indexes depends on the type of block device which you have. In pintos, the size of each block is 512 bytes. This is the reason why we have 128 odd extra unused bytes.
+But the size of the block differs from every device. Hence I chose this design to create multiple level index.
+
 
 			    SUBDIRECTORIES
 			    ==============
@@ -90,12 +103,21 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+NO DATA MEMBERS WERE CHANGED
 
 
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
+
+I store the block sector of the current directory of the process inside the thread structure. This will allow me to parse relative paths if they are specified as input.
+If the path which is specified starts with a "/", then the path is a absolute path and I have to open the root directory. Else, I will open the directory which corresponds to the block sector stored in the thread structure which is the current directory of the process.
+Then I use the strtok_r function to parse the input on "/" character. This will give the directory names which are to be traversed next.
+Then I will open that directory which is retured by strtok_r and then close the directory which is currently opened. After this I will again call strtok_r until it returns null.
+The last string returned by the function is the name of the file which is required.
+If the path is not valid, then it will return NULL.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -104,15 +126,31 @@ If A tries to read the file while B is writing to it, the block which A is tryin
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
 
+I use a lock on each directory to ensure that this won't happen. Once I open the directory to make some operations on that, I will get the lock on that directory.
+I will release the directory only after the operation has been finished.
+So if there are any simultaneous accesses to a particular directory to access a single file, the second access will make the process to be blocked until the other process releases the lock on that directory.
+
+
 >> B5: Does your implementation allow a directory to be removed if it
 >> is open by a process or if it is in use as a process's current
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
+Removing a directory which is a current directory of a process is a valid operation in my implementation. This will set the block sector number inside the thread structure as equal to 0.
+If the directory is open, then there will be a inode opened and stored in the open files structure. The inode will be marked as removed but will be removed only after the directory is closed.
+
+While verifying the path, I will check if the current directory block is 0. If it is 0, then it means that the current directory has been removed. Any relative paths will return error.
+
+
 ---- RATIONALE ----
 
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
+
+I chose to store the inumber of the directory inside the thread structure of the process to represent the current directory of the process.
+The other way was to store the struct dir * inside the thread structure. This will make the inode to be opened at all time the process is running. This is unnecessary since the current directory is required only when we are doing some operations on it.
+So, I will open the current directory only when we require it which is when we are using relative paths.
+
 
 			     BUFFER CACHE
 			     ============
@@ -176,6 +214,12 @@ Also, all the blocks are flushed onto the disk when the filesys_done function is
 
 >> C4: Describe your implementation of read-ahead.
 
+I did not implement read-ahead as in my opinion it will provide any performace gain. This is due to the fact that pintos does not have DMA. So, if we are doing read-ahead, then the thread will take up the CPU time for reading the next block which it has not requested and which it may request based on the locality of reference.
+This means that the thread has to not only wait for the IO to finish on the current block, but also has to wait for the IO on the next block which it may request. This is not required as we can do the IO when the request comes and save the CPU time.
+The workaround for this is to create another thread which takes care of read-ahead. Even in this case, any thread has to use some CPU time to read a block which might not be used at all.
+This will reduce the turnaround time for each process and hence I decided not to implement this functionality.
+
+
 ---- SYNCHRONIZATION ----
 
 >> C5: When one process is actively reading or writing data in a
@@ -197,6 +241,11 @@ By doing this, I will be sure that an access to a block will not come during the
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+When there are multiple processes which are doing the read and write operations on the same file, it is better to buffer cache the blocks of the file in memory. This will make the access to the file as memory operations.
+When a process is reading a block and doing some heavy operations on that block and then read the next block and do the same operations for the entire file, we can use read-ahead. When we are doing the heavy CPU operations, we can keep the IO busy by reading the next block so that when we want to read the next block to do the CPU operations, it is already in memory and we don't need to wait for the IO.
+When a particular block is being written by multiple processes one after the other, then write-behind will be helpful. This will make sure that the file is written back to the disk only once and that is when the file is removed from the buffer cache. Otherwise, we had to write to the file for every write operation and this will take a lot of IO which is not necessary.
+
 
 			   SURVEY QUESTIONS
 			   ================
