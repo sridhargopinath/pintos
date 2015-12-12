@@ -8,6 +8,11 @@
 #include "threads/synch.h"
 #include <hash.h>
 
+#ifdef FILESYS
+#include "devices/block.h"
+#include "filesys/filesys.h"
+#endif
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -134,6 +139,12 @@ struct thread
 #ifdef VM
 	uint32_t esp ;						// Saving the stack pointer
 	struct list mmaps ;					// List of the memory maps by this thread
+#endif
+
+#ifdef FILESYS
+
+	block_sector_t curdir ;
+
 #endif
 
     /* Owned by thread.c. */

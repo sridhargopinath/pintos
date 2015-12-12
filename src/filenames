@@ -20,6 +20,7 @@
 ./filesys/fsutil.c
 ./filesys/inode.c
 ./filesys/directory.c
+./filesys/cache.c
 ./filesys/file.c
 ./filesys/free-map.c
 ./devices/speaker.c
@@ -252,6 +253,7 @@
 ./filesys/directory.h
 ./filesys/inode.h
 ./filesys/fsutil.h
+./filesys/cache.h
 ./filesys/file.h
 ./filesys/off_t.h
 ./filesys/free-map.h

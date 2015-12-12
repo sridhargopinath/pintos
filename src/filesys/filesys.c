@@ -7,6 +7,9 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 
+#include "filesys/cache.h"
+#include "threads/synch.h"
+
 /* Partition that contains the file system. */
 struct block *fs_device;
 
@@ -24,8 +27,14 @@ filesys_init (bool format)
   inode_init ();
   free_map_init ();
 
+  /*printf ( "after free init\n");*/
+  // Initialize the buffer cache blocks
+  cache_init() ;
+
   if (format) 
     do_format ();
+
+  /*printf ( "Return from do format\n") ;*/
 
   free_map_open ();
 }
@@ -35,6 +44,10 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
+  // Release the buffer cache and write all the dirty blocks to the disk
+  release_cache() ;
+  free_zeros() ;
+
   free_map_close ();
 }
 
@@ -43,17 +56,30 @@ filesys_done (void)
    Fails if a file named NAME already exists,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size) 
+filesys_create (struct dir *dir, const char *name, off_t initial_size) 
 {
+  bool dir_null = false ;
+
+  if ( dir == NULL )
+  {
+	  dir_null = true ;
+	  dir = dir_open_root() ;
+	  lock_acquire(&dir->lock);
+  }
+
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
+                  && inode_create (inode_sector, initial_size, false)
+                  && dir_add (dir, name, inode_sector, false));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  dir_close (dir);
+
+  if ( dir_null == true )
+  {
+	  lock_release(&dir->lock) ;
+	  dir_close(dir) ;
+  }
 
   return success;
 }
@@ -72,6 +98,7 @@ filesys_open (const char *name)
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
   dir_close (dir);
+  /*printf ( " inode: %p dir: %p\n", inode, dir ) ;*/
 
   return file_open (inode);
 }
@@ -95,9 +122,13 @@ static void
 do_format (void)
 {
   printf ("Formatting file system...");
+  /*printf ( "Enter free map create\n");*/
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16))
+  /*printf ( "After free_map create\n");*/
+  /*printf ( "Return from free map create\n");*/
+  if (!dir_create (ROOT_DIR_SECTOR, 16, NULL))
     PANIC ("root directory creation failed");
+  /*printf ( "after dir create\n");*/
   free_map_close ();
   printf ("done.\n");
 }

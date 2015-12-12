@@ -109,6 +109,8 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  initial_thread->curdir = ROOT_DIR_SECTOR;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -307,7 +309,10 @@ thread_create (const char *name, int priority,
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
+  {
+	  printf ( "thread_create: get page failed\n");
     return TID_ERROR;
+  }
 
   /* Initialize thread. */
   init_thread (t, name, priority);
@@ -351,6 +356,7 @@ thread_create (const char *name, int priority,
   t->info = (struct process_info*) malloc (sizeof(struct process_info)) ;
   if ( t->info == NULL )
   {
+	  printf ( "thread_create: malloc of process_info failed\n");
 	  // IMPORTANT: We need to deallocate all the memory before and exit the thread
 	  // I do not know a way of doing this. We will just return ERROR for now
 	  return TID_ERROR ;
@@ -383,6 +389,14 @@ thread_create (const char *name, int priority,
   list_init(&t->mmaps) ;
   hash_init(&t->pages, page_hash, page_less, NULL ) ;
   #endif
+
+#ifdef FILESYS
+
+  // Copy the sector number of the current directory
+  t->curdir = cur->curdir ;
+
+#endif
+
 
   // Set the NICE and RECENT_CPU value for the thread
   if ( thread_mlfqs )

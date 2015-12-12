@@ -1,0 +1,272 @@
+			+---------------------------+
+			|			CS 140			|
+			|	PROJECT 4: FILE SYSTEMS	|
+			|		DESIGN DOCUMENT		|
+			+---------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Sridhar Gopinath <g.sridhar53@gmail.com>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+		     INDEXED AND EXTENSIBLE FILES
+		     ============================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+// Block of all zeros which is used to write 0s to a file block
+char *zeros ;
+
+
+>> A2: What is the maximum size of a file supported by your inode
+>> structure?  Show your work.
+
+It is exactly 8 MB. I have used double indirection to achieve this.
+The first level sector table is stored in the inode->data.start block. Since size required to store each block sector is 4 Bytes and the size of each block is 512 bytes, I can store 128 entries in each disk block.
+Each of these entries point to another disk block which acts like the second level disk block table.
+Entries in the second level disk block table correspond to the actual disk blocks where the data is stored. The number of entries possible in the second level disk block table is again 128.
+Hence, I have a first level disk block table present at inode->data.start. This indexes to 128 second level disk block tables. Each of these 128 second level disk block tables point to the disk blocks where the data is stored.
+The total size becomes 512*128*128 = 8 MB
+
+
+---- SYNCHRONIZATION ----
+
+>> A3: Explain how your code avoids a race if two processes attempt to
+>> extend a file at the same time.
+
+I have a lock on each inode present in the system. This will help synchronize all the per-inode operations.
+A file is extended only when you are writing to it past the EOF or if you are seeking if past the EOF.
+Both of these operations occur only after acquiring a lock on the inode corresponding to that file. Two processes can attempt to extend the file only if they execute these operations concurrently.
+Even when that happens, the operations are synchronized which will make sure that only one of these processes can actually extend the file while the other process has to wait for it to complete.
+
+
+>> A4: Suppose processes A and B both have file F open, both
+>> positioned at end-of-file.  If A reads and B writes F at the same
+>> time, A may read all, part, or none of what B writes.  However, A
+>> may not read data other than what B writes, e.g. if B writes
+>> nonzero data, A is not allowed to see all zeros.  Explain how your
+>> code avoids this race.
+
+If A tries to read the file before B writes to the file, then during this time the file is not extended. At this point if A tries to read from the EOF, since the semantics say that reading past the EOF should always return 0 bytes, I return 0 bytes. This is done by looking at the length of the inode before performing a read operation on a inode. If the read is passing the EOF, I return 0. By this A reads nothing of what B will write.
+If B writes to a file before A performs a read, then write at a position past EOF will result in the file being extended. This will make sure that the length of the inode is updated and the disk blocks are allocated, if required, and then the new data is written into it. If A performs a read after this, then A will read all of what B has written.
+If A tries to read the file while B is writing to it, the block which A is trying to read will be in the buffer cache. The writes being performed by B are on the memory which represents the file block in the buffer cache. Now both of the processes have the same buffer block. Now A can read only that data that is written by B. This means that A will be able to read part of what B has written.
+
+
+>> A5: Explain how your synchronization design provides "fairness".
+>> File access is "fair" if readers cannot indefinitely block writers
+>> or vice versa.  That is, many processes reading from a file cannot
+>> prevent forever another process from writing the file, and many
+>> processes writing to a file cannot prevent another process forever
+>> from reading the file.
+
+I do not take any extra steps to make sure that the fairness is provided for simultaneous reads and writes to a particular file. As mentioned in the documentation, I provide the guarentee that the if simultaneous read and writes occur on a single file, the process which initiated the read will read either nothing which the other process has written, some of what the other process has written or everything which the other process has written.
+Other than this, I do not provide any other synchronization mechanisms for the simultaneous read and writes of the single file.
+It is left to the programs to take care of fairness.
+
+
+---- RATIONALE ----
+
+>> A6: Is your inode structure a multilevel index?  If so, why did you
+>> choose this particular combination of direct, indirect, and doubly
+>> indirect blocks?  If not, why did you choose an alternative inode
+>> structure, and what advantages and disadvantages does your
+>> structure have, compared to a multilevel index?
+
+I have a multi level index for finding the block in a particular inode.
+The first level is the single block whose block index is stored in the block.start variable. The second level is indexed by block.start block.
+The actual block where the data is stored is indexed by the second level index.
+I chose this design because this is straight-forward. I can use the same design for any type of block device.
+I chose not to use the direct indexes because the number of direct indexes depends on the type of block device which you have. In pintos, the size of each block is 512 bytes. This is the reason why we have 128 odd extra unused bytes.
+But the size of the block differs from every device. Hence I chose this design to create multiple level index.
+
+
+			    SUBDIRECTORIES
+			    ==============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+NO DATA MEMBERS WERE CHANGED
+
+
+---- ALGORITHMS ----
+
+>> B2: Describe your code for traversing a user-specified path.  How
+>> do traversals of absolute and relative paths differ?
+
+I store the block sector of the current directory of the process inside the thread structure. This will allow me to parse relative paths if they are specified as input.
+If the path which is specified starts with a "/", then the path is a absolute path and I have to open the root directory. Else, I will open the directory which corresponds to the block sector stored in the thread structure which is the current directory of the process.
+Then I use the strtok_r function to parse the input on "/" character. This will give the directory names which are to be traversed next.
+Then I will open that directory which is retured by strtok_r and then close the directory which is currently opened. After this I will again call strtok_r until it returns null.
+The last string returned by the function is the name of the file which is required.
+If the path is not valid, then it will return NULL.
+
+
+---- SYNCHRONIZATION ----
+
+>> B4: How do you prevent races on directory entries?  For example,
+>> only one of two simultaneous attempts to remove a single file
+>> should succeed, as should only one of two simultaneous attempts to
+>> create a file with the same name, and so on.
+
+I use a lock on each directory to ensure that this won't happen. Once I open the directory to make some operations on that, I will get the lock on that directory.
+I will release the directory only after the operation has been finished.
+So if there are any simultaneous accesses to a particular directory to access a single file, the second access will make the process to be blocked until the other process releases the lock on that directory.
+
+
+>> B5: Does your implementation allow a directory to be removed if it
+>> is open by a process or if it is in use as a process's current
+>> working directory?  If so, what happens to that process's future
+>> file system operations?  If not, how do you prevent it?
+
+Removing a directory which is a current directory of a process is a valid operation in my implementation. This will set the block sector number inside the thread structure as equal to 0.
+If the directory is open, then there will be a inode opened and stored in the open files structure. The inode will be marked as removed but will be removed only after the directory is closed.
+
+While verifying the path, I will check if the current directory block is 0. If it is 0, then it means that the current directory has been removed. Any relative paths will return error.
+
+
+---- RATIONALE ----
+
+>> B6: Explain why you chose to represent the current directory of a
+>> process the way you did.
+
+I chose to store the inumber of the directory inside the thread structure of the process to represent the current directory of the process.
+The other way was to store the struct dir * inside the thread structure. This will make the inode to be opened at all time the process is running. This is unnecessary since the current directory is required only when we are doing some operations on it.
+So, I will open the current directory only when we require it which is when we are using relative paths.
+
+
+			     BUFFER CACHE
+			     ============
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+// BUFFER CACHE Blocks
+struct hash cache_blocks ;
+
+// Lock to access the cache blocks
+struct lock cache ;
+
+// List of all the cache blocks in memory
+struct list cache_list ;
+
+// Cache block table entry
+struct cache
+{
+	block_sector_t idx ;					// HASH KEY. Sector number on the disk this block belongs to
+
+	void *kblock ;							// Kernel block which stores the block data
+
+	bool accessed ;							// Accessed flag
+	bool dirty ;							// Dirty flag
+	int in_use ;							// Number of processes currently using this cache block
+
+	struct hash_elem hash_elem ;			// Hash element for storing cache block in the hash
+	struct list_elem elem ;					// List element for the list used for eviction algorithm
+} ;
+
+// List of all the blocks that are in the process of getting evicted
+struct list evict_list ;
+
+// Lock to access the evict_list
+struct lock evict ;
+
+
+---- ALGORITHMS ----
+
+>> C2: Describe how your cache replacement algorithm chooses a cache
+>> block to evict.
+
+I have implemented CLOCK algorithm for the replacement of the cache blocks.
+I have a accessed, dirty and in_use flags in each of the buffer cache blocks. I increase the in_use count of a cache block whenever a request to block comes. This is decremented after the request has been completed. This is done to take of the case when the block is selected for eviction when the block is still in use.
+The access flag is set everytime read or write is called on the cache block.
+Dirty flag is set when the cache block is written.
+The algorithm picks up a cache block and checks if the in_use is 0. If not, puts it at the back of the list and picks the next block. If the accessed flag is true, makes is false and puts it back. If the accessed flag is false, it is selected for eviction.
+If the dirty block is set, then the block is written back to the disk and then removed from the cache block list.
+
+
+>> C3: Describe your implementation of write-behind.
+
+All the writes for a particular cache block is done on the buffer cache block. Only when the block is selected for eviction, then we have to write it back to the disk.
+I check if the dirty flag is set for the cache block. If so, then that block is written back.
+Also, all the blocks are flushed onto the disk when the filesys_done function is executed. This function is executed when the system is shutting down. This is done to make sure that all the cache blocks finally end up in the file system and are not lost by staying in the memory.
+
+
+>> C4: Describe your implementation of read-ahead.
+
+I did not implement read-ahead as in my opinion it will provide any performace gain. This is due to the fact that pintos does not have DMA. So, if we are doing read-ahead, then the thread will take up the CPU time for reading the next block which it has not requested and which it may request based on the locality of reference.
+This means that the thread has to not only wait for the IO to finish on the current block, but also has to wait for the IO on the next block which it may request. This is not required as we can do the IO when the request comes and save the CPU time.
+The workaround for this is to create another thread which takes care of read-ahead. Even in this case, any thread has to use some CPU time to read a block which might not be used at all.
+This will reduce the turnaround time for each process and hence I decided not to implement this functionality.
+
+
+---- SYNCHRONIZATION ----
+
+>> C5: When one process is actively reading or writing data in a
+>> buffer cache block, how are other processes prevented from evicting
+>> that block?
+
+I use a flag called as in_use in each of the cache block entry which indicates the number of processes that are currently using that block.
+While evicting a cache block, in_use is checked and only if it is 0, it is considered for eviction. Else, it is put back at the end of the list and the next candidate is chosen.
+
+
+>> C6: During the eviction of a block from the cache, how are other
+>> processes prevented from attempting to access the block?
+
+I use a evict list which contains the list of all the blocks which are yet to be flushed back into the disk. If a request for that block comes, then I will make the thread sleep for 12 ticks. This is done to make sure that the eviction thread will run and it will evict all the blocks that are in evict_list.
+By doing this, I will be sure that an access to a block will not come during the eviction of that block.
+
+
+---- RATIONALE ----
+
+>> C7: Describe a file workload likely to benefit from buffer caching,
+>> and workloads likely to benefit from read-ahead and write-behind.
+
+When there are multiple processes which are doing the read and write operations on the same file, it is better to buffer cache the blocks of the file in memory. This will make the access to the file as memory operations.
+When a process is reading a block and doing some heavy operations on that block and then read the next block and do the same operations for the entire file, we can use read-ahead. When we are doing the heavy CPU operations, we can keep the IO busy by reading the next block so that when we want to read the next block to do the CPU operations, it is already in memory and we don't need to wait for the IO.
+When a particular block is being written by multiple processes one after the other, then write-behind will be helpful. This will make sure that the file is written back to the disk only once and that is when the file is removed from the buffer cache. Otherwise, we had to write to the file for every write operation and this will take a lot of IO which is not necessary.
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students in future quarters?
+
+>> Any other comments?
